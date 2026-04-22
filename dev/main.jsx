@@ -1,7 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { createClient } from '@supabase/supabase-js';
-import { CakeDesigner, CreateTemplate } from '../src/index.js';
+import { CakeDesigner, CreateTemplate, AuthGate } from '../src/index.js';
 
 const supabase = createClient(
   'https://lsvmnycehfopxsgruwmk.supabase.co',
@@ -32,6 +32,8 @@ function Root() {
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <Root />
+    <AuthGate supabase={supabase}>
+      <Root />
+    </AuthGate>
   </React.StrictMode>
 );
