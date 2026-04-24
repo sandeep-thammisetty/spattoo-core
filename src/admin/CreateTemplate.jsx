@@ -89,7 +89,7 @@ const s = {
     background: color, flexShrink: 0, cursor: 'pointer',
   }),
   thumbnailBox: {
-    width: '100%', height: 120, border: '1.5px dashed #e0d0d5',
+    width: '100%', aspectRatio: '1 / 1', border: '1.5px dashed #e0d0d5',
     borderRadius: 10, display: 'flex', alignItems: 'center',
     justifyContent: 'center', overflow: 'hidden', background: '#fdf9fb',
     marginBottom: 8,
