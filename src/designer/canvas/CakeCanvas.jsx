@@ -397,6 +397,66 @@ function CakeScene({
   );
 }
 
+function CakeThumbnailScene({ config }) {
+  const { tiers, topper = null } = config;
+
+  let stackY = 0.1;
+  const tierData = tiers.map(tier => {
+    const baseY = stackY;
+    stackY += tier.height;
+    return { ...tier, baseY };
+  });
+
+  return (
+    <>
+      <ambientLight intensity={1.2} />
+      <directionalLight position={[6, 14, 8]} intensity={1.5} />
+      <directionalLight position={[-4, 4, -4]} intensity={0.4} />
+      {tierData.map((tier, i) => (
+        <CakeTier
+          key={i}
+          radius={tier.radius}
+          height={tier.height}
+          color={tier.color}
+          yBase={tier.baseY}
+          frostingType={tier.frostingType}
+          selected={false}
+          topPiping={tier.topPiping}
+          bottomPiping={tier.bottomPiping}
+          topPipingSelected={false}
+          bottomPipingSelected={false}
+          onTopPipingClick={() => {}}
+          onBottomPipingClick={() => {}}
+          onClick={() => {}}
+        />
+      ))}
+      {topper?.image_url && (
+        <CakeTopper
+          glbPath={topper.image_url}
+          topY={stackY}
+          topRadius={tierData[tierData.length - 1].radius}
+          scaleMultiplier={topper.scale ?? 1}
+        />
+      )}
+    </>
+  );
+}
+
+export function CakeThumbnailCanvas({ config, containerRef }) {
+  return (
+    <div ref={containerRef} style={{ position: 'absolute', left: -9999, top: -9999, width: 400, height: 400 }}>
+      <Canvas
+        gl={{ preserveDrawingBuffer: true, alpha: true }}
+        camera={{ position: [4.5, 5.5, 6.5], fov: 42 }}
+        style={{ width: 400, height: 400 }}
+      >
+        <CakeThumbnailScene config={config} />
+        <OrbitControls enableZoom={false} enablePan={false} autoRotate={false} target={[0, 2, 0]} />
+      </Canvas>
+    </div>
+  );
+}
+
 export default function CakeCanvas({
   config, selectedTier, onTierClick, onDeselect,
   selectedTextId, onTextSelect, onTextMove, onTextContentChange, textToolbar,

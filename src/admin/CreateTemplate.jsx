@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, Suspense } from 'react';
-import CakeCanvas from '../designer/canvas/CakeCanvas.jsx';
+import CakeCanvas, { CakeThumbnailCanvas } from '../designer/canvas/CakeCanvas.jsx';
 import { TIER_RADII, FROSTING_TYPES } from '../designer/hooks/useCakeDesign.js';
 
 const TIER_COLORS = ['#f5b8c8', '#ffffff', '#c8dff5', '#d4f5d4'];
@@ -147,7 +147,8 @@ export default function CreateTemplate({ supabase, thumbnailBucket = 'cake-thumb
   const [topperOptions, setTopperOptions] = useState([]);
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState(null);
-  const canvasContainerRef = useRef();
+  const canvasContainerRef  = useRef();
+  const thumbContainerRef   = useRef();
 
   // Load piping styles and toppers from DB
   useEffect(() => {
@@ -216,7 +217,7 @@ export default function CreateTemplate({ supabase, thumbnailBucket = 'cake-thumb
   }), [tiers, topper]);
 
   function captureThumbnail() {
-    const canvas = canvasContainerRef.current?.querySelector('canvas');
+    const canvas = thumbContainerRef.current?.querySelector('canvas');
     if (!canvas) return;
     setThumbnail(canvas.toDataURL('image/png'));
   }
@@ -443,6 +444,11 @@ export default function CreateTemplate({ supabase, thumbnailBucket = 'cake-thumb
         </div>
 
       </div>
+
+      {/* Hidden off-screen canvas for clean thumbnail capture (no floor/board/background) */}
+      <Suspense fallback={null}>
+        <CakeThumbnailCanvas config={canvasConfig} containerRef={thumbContainerRef} />
+      </Suspense>
     </>
   );
 }
