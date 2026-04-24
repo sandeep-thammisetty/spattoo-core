@@ -188,7 +188,7 @@ function ElementTypeCard({
 }
 
 // ── Main designer ─────────────────────────────────────────────────────────────
-export default function CakeDesigner({ supabase, thumbnailBucket = 'cake-thumbnails', onOrder }) {
+export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'cake-thumbnails', onOrder }) {
   const { design, setTierColor, setTopPiping, setBottomPiping, addText, updateText, duplicateText, removeText, setTopper, setTopperScale, loadDesign, canvasConfig } = useCakeDesign();
   const [elementsOpen, setElementsOpen] = useState(false);
   const [elementTypes, setElementTypes] = useState([]);
@@ -297,12 +297,16 @@ export default function CakeDesigner({ supabase, thumbnailBucket = 'cake-thumbna
   // Eager load element_types (with allowed_actions) on mount so edit controls
   // are available immediately — before the elements panel is ever opened.
   useEffect(() => {
-    supabase
-      .from('element_types')
-      .select('id, slug, name, placement_rules, sort_order, default_allowed_actions')
-      .eq('is_active', true)
-      .order('sort_order')
-      .then(({ data }) => { if (data) setElementTypes(data); });
+    if (apiClient) {
+      apiClient.fetchElementTypes().then(data => { if (data) setElementTypes(data); });
+    } else {
+      supabase
+        .from('element_types')
+        .select('id, slug, name, placement_rules, sort_order, default_allowed_actions')
+        .eq('is_active', true)
+        .order('sort_order')
+        .then(({ data }) => { if (data) setElementTypes(data); });
+    }
   }, []);
 
   async function openElements() {
@@ -312,34 +316,42 @@ export default function CakeDesigner({ supabase, thumbnailBucket = 'cake-thumbna
     // Lazy-load top-level cake_elements when panel first opens
     if (opening && toppersDb.length === 0) {
       setElementTypesLoading(true);
-      const { data: topLevelData } = await supabase
-        .from('cake_elements')
-        .select('id, name, image_url, thumbnail_url, sort_order, element_type_id')
-        .is('parent_id', null)
-        .eq('is_active', true)
-        .order('sort_order');
-      const rows = topLevelData ?? [];
-      // Derive which element_types have active records
+      let rows = [];
+      if (apiClient) {
+        rows = await apiClient.fetchElements({ parentsOnly: true });
+      } else {
+        const { data: topLevelData } = await supabase
+          .from('cake_elements')
+          .select('id, name, image_url, thumbnail_url, sort_order, element_type_id')
+          .is('parent_id', null)
+          .eq('is_active', true)
+          .order('sort_order');
+        rows = topLevelData ?? [];
+      }
       setActiveElementTypeIds(new Set(rows.map(r => r.element_type_id)));
-      // Separate toppers for the topper card UI
-      setToppersDb(rows.filter(r => r.element_type_id === 'dd587f6c-44af-432d-a6f7-cf3a185c7951'));
+      const topperTypeId = elementTypes.find(et => et.slug === 'topper')?.id;
+      setToppersDb(rows.filter(r => r.element_type_id === topperTypeId));
       setElementTypesLoading(false);
     }
   }
 
   async function openTemplates() {
-    setTemplatesOpen(o => {
-      if (o) return false;
-      return true;
-    });
+    const isOpening = !templatesOpen;
+    setTemplatesOpen(isOpening);
+    if (!isOpening) return;
     setTemplatesLoading(true);
-    const { data, error } = await supabase
-      .from('cake_templates')
-      .select('id, name, offering, tier_count, thumbnail_url, created_at')
-      .eq('is_active', true)
-      .order('sort_order')
-      .order('created_at', { ascending: false });
-    setTemplates(error ? [] : data);
+    if (apiClient) {
+      const data = await apiClient.fetchTemplates().catch(() => []);
+      setTemplates(data ?? []);
+    } else {
+      const { data, error } = await supabase
+        .from('cake_templates')
+        .select('id, name, offering, tier_count, thumbnail_url, created_at')
+        .eq('is_active', true)
+        .order('sort_order')
+        .order('created_at', { ascending: false });
+      setTemplates(error ? [] : data);
+    }
     setTemplatesLoading(false);
   }
 
@@ -447,13 +459,21 @@ export default function CakeDesigner({ supabase, thumbnailBucket = 'cake-thumbna
   // Lazy-load piping styles from DB the first time the picker is triggered
   useEffect(() => {
     if (pipingTarget && pipingStylesDb.length === 0) {
-      supabase
-        .from('cake_elements')
-        .select('id, name, image_url, sort_order')
-        .eq('element_type_id', '2f718ccd-64e1-4941-b5f9-72133f77c04c')
-        .eq('is_active', true)
-        .order('sort_order')
-        .then(({ data }) => setPipingStylesDb(data ?? []));
+      if (apiClient) {
+        const pipingTypeId = elementTypes.find(et => et.slug === 'cream_piping')?.id;
+        if (pipingTypeId) {
+          apiClient.fetchElements({ elementTypeId: pipingTypeId })
+            .then(data => setPipingStylesDb(data ?? []));
+        }
+      } else {
+        supabase
+          .from('cake_elements')
+          .select('id, name, image_url, sort_order')
+          .eq('element_type_id', '2f718ccd-64e1-4941-b5f9-72133f77c04c')
+          .eq('is_active', true)
+          .order('sort_order')
+          .then(({ data }) => setPipingStylesDb(data ?? []));
+      }
     }
   }, [pipingTarget]);
 
@@ -608,13 +628,20 @@ export default function CakeDesigner({ supabase, thumbnailBucket = 'cake-thumbna
             {templates.map(t => (
               <div key={t.id} style={s.templateCard}
                 onClick={async () => {
-                  const { data } = await supabase
-                    .from('cake_templates')
-                    .select('design')
-                    .eq('id', t.id)
-                    .single();
-                  if (data?.design) {
-                    loadDesign(data.design);
+                  let design;
+                  if (apiClient) {
+                    const full = await apiClient.fetchTemplate(t.id).catch(() => null);
+                    design = full?.design;
+                  } else {
+                    const { data } = await supabase
+                      .from('cake_templates')
+                      .select('design')
+                      .eq('id', t.id)
+                      .single();
+                    design = data?.design;
+                  }
+                  if (design) {
+                    loadDesign(design);
                     setTemplatesOpen(false);
                     clearAllSelections();
                   }

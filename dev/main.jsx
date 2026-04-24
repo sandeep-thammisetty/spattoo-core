@@ -8,8 +8,38 @@ const supabase = createClient(
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imxzdm1ueWNlaGZvcHhzZ3J1d21rIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4MjI0NjIsImV4cCI6MjA5MTM5ODQ2Mn0.ay0o6ugWvik_Mp607oYyYQIQzX4wphhhLNi-53HvwHY'
 );
 
-const STORAGE_BASE = 'https://lsvmnycehfopxsgruwmk.supabase.co/storage/v1/object/public/cake-assets';
+const API_URL = 'https://spattoo-backend.onrender.com';
 
+function createApiClient(supabaseClient) {
+  async function authFetch(path, options = {}) {
+    const { data: { session } } = await supabaseClient.auth.getSession();
+    const res = await fetch(`${API_URL}${path}`, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`,
+        ...(options.headers ?? {}),
+      },
+    });
+    if (!res.ok) throw new Error(`API error ${res.status}: ${path}`);
+    return res.json();
+  }
+
+  return {
+    fetchElementTypes: () => authFetch('/api/element-types'),
+    fetchElements: (opts = {}) => {
+      const params = new URLSearchParams();
+      if (opts.parentsOnly) params.set('parents_only', 'true');
+      if (opts.elementTypeId) params.set('element_type_id', opts.elementTypeId);
+      const qs = params.toString();
+      return authFetch(`/api/elements${qs ? `?${qs}` : ''}`);
+    },
+    fetchTemplates: () => authFetch('/api/templates'),
+    fetchTemplate: (id) => authFetch(`/api/templates/${id}`),
+  };
+}
+
+const apiClient = createApiClient(supabase);
 const path = window.location.pathname;
 
 function Root() {
@@ -23,8 +53,7 @@ function Root() {
   }
   return (
     <CakeDesigner
-      supabase={supabase}
-      storageBaseUrl={STORAGE_BASE}
+      apiClient={apiClient}
       onOrder={({ design }) => console.log('Order:', design)}
     />
   );
