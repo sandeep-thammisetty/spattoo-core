@@ -135,7 +135,7 @@ function PipingSelect({ label, value, options, onSelect, onColorChange }) {
   );
 }
 
-export default function CreateTemplate({ supabase, thumbnailBucket = 'cake-thumbnails', onSaved }) {
+export default function CreateTemplate({ supabase, thumbnailBucket = 'cake-thumbnails', onSave, onSaved }) {
   const [name, setName] = useState('');
   const [tierCount, setTierCount] = useState(1);
   const [tiers, setTiers] = useState([
@@ -226,21 +226,6 @@ export default function CreateTemplate({ supabase, thumbnailBucket = 'cake-thumb
     setSaving(true);
     setSaveMsg(null);
 
-    let thumbnail_url = null;
-    if (thumbnail) {
-      const blob = await (await fetch(thumbnail)).blob();
-      const fileName = `template-${Date.now()}.png`;
-      const { error: upErr } = await supabase.storage
-        .from(thumbnailBucket)
-        .upload(fileName, blob, { contentType: 'image/png', upsert: false });
-      if (!upErr) {
-        const { data: { publicUrl } } = supabase.storage
-          .from(thumbnailBucket)
-          .getPublicUrl(fileName);
-        thumbnail_url = publicUrl;
-      }
-    }
-
     const designJson = {
       shape: 'round',
       tiers: tiers.map(t => ({
@@ -255,24 +240,38 @@ export default function CreateTemplate({ supabase, thumbnailBucket = 'cake-thumb
       topper: topper ?? null,
     };
 
-    const { error } = await supabase.from('cake_templates').insert({
-      name:          name.trim(),
-      shape:         'round',
-      tier_count:    tierCount,
-      offering:      'standard',
-      design:        designJson,
-      thumbnail_url,
-      is_active:     true,
-      sort_order:    0,
-    });
+    const thumbnailBlob = thumbnail ? await (await fetch(thumbnail)).blob() : null;
 
-    setSaving(false);
-    if (error) {
-      setSaveMsg({ ok: false, text: error.message });
-    } else {
+    try {
+      if (onSave) {
+        await onSave({ name: name.trim(), tierCount, designJson, thumbnailBlob });
+      } else {
+        // Legacy: direct Supabase save (fallback)
+        let thumbnail_url = null;
+        if (thumbnailBlob) {
+          const fileName = `template-${Date.now()}.png`;
+          const { error: upErr } = await supabase.storage
+            .from(thumbnailBucket)
+            .upload(fileName, thumbnailBlob, { contentType: 'image/png', upsert: false });
+          if (!upErr) {
+            const { data: { publicUrl } } = supabase.storage.from(thumbnailBucket).getPublicUrl(fileName);
+            thumbnail_url = publicUrl;
+          }
+        }
+        const { error } = await supabase.from('cake_templates').insert({
+          name: name.trim(), shape: 'round', tier_count: tierCount,
+          offering: 'standard', design: designJson, thumbnail_url, is_active: true, sort_order: 0,
+        });
+        if (error) throw new Error(error.message);
+      }
+
       setSaveMsg({ ok: true, text: 'Template saved!' });
       onSaved?.();
       setTimeout(() => setSaveMsg(null), 2000);
+    } catch (err) {
+      setSaveMsg({ ok: false, text: err.message });
+    } finally {
+      setSaving(false);
     }
   }
 
