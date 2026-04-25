@@ -717,9 +717,9 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
 
           <nav style={s.sidebarNav}>
             {[
-              { id: 'text',      label: 'Text'      },
-              { id: 'elements',  label: 'Elements'  },
               { id: 'templates', label: 'Templates' },
+              { id: 'elements',  label: 'Elements'  },
+              { id: 'text',      label: 'Text'      },
             ].map(({ id, label }) => {
               const active = id === 'elements' ? elementsOpen : id === 'templates' ? templatesOpen : false;
               return (
