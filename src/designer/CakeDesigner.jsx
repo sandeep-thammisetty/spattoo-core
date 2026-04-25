@@ -322,6 +322,9 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
     background: hexToRgba(primaryColor, 0.1),
     color: primaryColor,
   };
+  const initials = userData
+    ? `${(userData.firstName || '')[0] || ''}${(userData.lastName || '')[0] || ''}`.toUpperCase() || '?'
+    : '?';
 
   useEffect(() => {
     if (apiClient?.fetchBakerProfile) {
@@ -696,27 +699,6 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
             </div>
           )}
         </div>
-        <div style={{ position: 'relative' }} ref={profileRef}>
-          <button style={{ ...s.topBarIconBtn, background: profileOpen ? '#f5eaed' : 'transparent' }}
-            onClick={() => { setProfileOpen(o => !o); setSettingsOpen(false); }}>
-            <UserIcon size={16} />
-          </button>
-          {profileOpen && (
-            <div style={{ ...s.dropdown, top: 'calc(100% + 6px)', left: 'auto', right: 0 }}>
-              <div style={s.dropdownUserInfo}>
-                <div style={s.dropdownName}>
-                  {userData ? `${userData.firstName} ${userData.lastName}`.trim() : 'My Account'}
-                </div>
-                {userData?.email && <div style={s.dropdownEmail}>{userData.email}</div>}
-              </div>
-              <div style={s.dropdownDivider} />
-              <button style={s.dropdownItem}
-                onClick={() => { supabase?.auth.signOut(); setProfileOpen(false); }}>
-                Sign out
-              </button>
-            </div>
-          )}
-        </div>
       </div>
 
       {/* ── Main ── */}
@@ -753,6 +735,31 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
               );
             })}
           </nav>
+
+          <div style={{ flex: 1 }} />
+
+          <div style={{ padding: '12px 8px', position: 'relative' }} ref={profileRef}>
+            <button
+              style={{ ...s.sidebarProfileBtn, background: primaryColor }}
+              onClick={() => { setProfileOpen(o => !o); setSettingsOpen(false); }}>
+              {initials}
+            </button>
+            {profileOpen && (
+              <div style={{ ...s.dropdown, bottom: 'calc(100% + 8px)', top: 'auto', left: 8 }}>
+                <div style={s.dropdownUserInfo}>
+                  <div style={s.dropdownName}>
+                    {userData ? `${userData.firstName} ${userData.lastName}`.trim() : 'My Account'}
+                  </div>
+                  {userData?.email && <div style={s.dropdownEmail}>{userData.email}</div>}
+                </div>
+                <div style={s.dropdownDivider} />
+                <button style={s.dropdownItem}
+                  onClick={() => { supabase?.auth.signOut(); setProfileOpen(false); }}>
+                  Sign out
+                </button>
+              </div>
+            )}
+          </div>
 
         </div>
 
@@ -1022,6 +1029,13 @@ const s = {
     transition: 'background 0.15s, color 0.15s',
   },
   sidebarBtnActive: { background: '#fdf0f5', color: '#9b5f72', fontWeight: 700 },
+  sidebarProfileBtn: {
+    width: 36, height: 36, borderRadius: '50%', border: 'none',
+    cursor: 'pointer', color: '#fff',
+    fontSize: 13, fontWeight: 700, letterSpacing: 0.5,
+    fontFamily: "'Quicksand',sans-serif",
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+  },
 
   // Top bar (settings + profile)
   topBar: {
