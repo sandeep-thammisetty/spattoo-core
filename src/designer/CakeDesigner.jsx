@@ -6,6 +6,12 @@ import { useCakeDesign } from './hooks/useCakeDesign';
 // Tier caps are hardcoded — tiers are not element_types rows, they're the cake structure itself
 const TIER_CAPS = { color: true, resize: false, style: false, fontSize: false, duplicate: false, delete: false };
 
+function hexToRgba(hex, alpha) {
+  const h = (hex || '').replace('#', '');
+  if (h.length !== 6) return `rgba(155,95,114,${alpha})`;
+  return `rgba(${parseInt(h.slice(0,2),16)},${parseInt(h.slice(2,4),16)},${parseInt(h.slice(4,6),16)},${alpha})`;
+}
+
 const TIER_LABELS = ['Bottom Tier', '2nd Tier', '3rd Tier', 'Top Tier'];
 
 // ── Color picker (react-colorful) ─────────────────────────────────────────────
@@ -194,7 +200,7 @@ function UserIcon({ size = 18 }) {
 }
 
 // ── Add team member modal ──────────────────────────────────────────────────────
-function AddUserModal({ onClose }) {
+function AddUserModal({ onClose, brandBtn }) {
   const [form, setForm] = useState({ firstName: '', lastName: '', email: '', role: 'staff' });
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState(null);
@@ -242,7 +248,7 @@ function AddUserModal({ onClose }) {
         {msg && (
           <div style={{ fontSize: 12, fontWeight: 600, color: msg.ok ? '#2e7d52' : '#e53935' }}>{msg.text}</div>
         )}
-        <button style={{ ...s.orderBtn, marginTop: 4, opacity: canSubmit ? 1 : 0.6 }}
+        <button style={{ ...s.orderBtn, ...(brandBtn || {}), marginTop: 4, opacity: canSubmit ? 1 : 0.6 }}
           disabled={!canSubmit} onClick={handleSubmit}>
           {loading ? 'Sending...' : 'Send Invitation'}
         </button>
@@ -305,6 +311,17 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
   const [userData,     setUserData]     = useState(null);
   const settingsRef = useRef(null);
   const profileRef  = useRef(null);
+
+  const primaryColor = bakerData?.primary_color || '#e91e8c';
+  const accentColor  = bakerData?.accent_color  || '#c2185b';
+  const brandBtn = {
+    background: `linear-gradient(135deg, ${primaryColor}, ${accentColor})`,
+    boxShadow: `0 4px 16px ${hexToRgba(primaryColor, 0.3)}`,
+  };
+  const brandActive = {
+    background: hexToRgba(primaryColor, 0.1),
+    color: primaryColor,
+  };
 
   useEffect(() => {
     if (apiClient?.fetchBakerProfile) {
@@ -725,7 +742,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
               const active = id === 'elements' ? elementsOpen : id === 'templates' ? templatesOpen : false;
               return (
                 <button key={id}
-                  style={{ ...s.sidebarBtn, ...(active ? s.sidebarBtnActive : {}) }}
+                  style={{ ...s.sidebarBtn, ...(active ? { ...s.sidebarBtnActive, ...brandActive } : {}) }}
                   onClick={() => {
                     if (id === 'text')      { stopRotatingOnFirstEdit(); addText(); }
                     if (id === 'elements')  openElements();
@@ -932,7 +949,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
       {/* ── Order button ── */}
       {selectedEl?.type !== 'text' && (
         <div style={s.orderBar}>
-          <button style={s.orderBtn} onClick={handleOrder}>Order This Cake</button>
+          <button style={{ ...s.orderBtn, ...brandBtn }} onClick={handleOrder}>Order This Cake</button>
         </div>
       )}
 
@@ -955,7 +972,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
               {['standard', 'premium'].map(o => (
                 <button
                   key={o}
-                  style={{ ...s.offeringBtn, borderColor: templateOffering === o ? '#9b5f72' : '#f0dce3', background: templateOffering === o ? '#fdf0f5' : '#fff', color: templateOffering === o ? '#9b5f72' : '#b07a8a' }}
+                  style={{ ...s.offeringBtn, borderColor: templateOffering === o ? primaryColor : '#f0dce3', background: templateOffering === o ? hexToRgba(primaryColor, 0.08) : '#fff', color: templateOffering === o ? primaryColor : '#b07a8a' }}
                   onClick={() => setTemplateOffering(o)}
                 >
                   {o.charAt(0).toUpperCase() + o.slice(1)}
@@ -968,7 +985,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
               </div>
             )}
             <button
-              style={{ ...s.orderBtn, marginTop: 14, opacity: saving || !templateName.trim() ? 0.6 : 1 }}
+              style={{ ...s.orderBtn, ...brandBtn, marginTop: 14, opacity: saving || !templateName.trim() ? 0.6 : 1 }}
               onClick={handleSaveTemplate}
               disabled={saving || !templateName.trim()}
             >
@@ -979,7 +996,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
       )}
 
       {/* ── Add User modal ── */}
-      {addUserModal && <AddUserModal onClose={() => setAddUserModal(false)} />}
+      {addUserModal && <AddUserModal onClose={() => setAddUserModal(false)} brandBtn={brandBtn} />}
     </div>
   );
 }
