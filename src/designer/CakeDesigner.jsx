@@ -70,7 +70,7 @@ function ElementTypeCard({
 
         {design.tiers.map((tier, i) => (
           <div key={i} style={{ width: '100%', borderTop: '1px solid #f0dce3', paddingTop: 6 }}>
-            <div style={{ fontSize: 9, fontWeight: 700, color: '#c9a0b0', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 4 }}>
+            <div style={{ fontSize: 9, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 4 }}>
               {TIER_LABELS[i]}
             </div>
 
@@ -90,7 +90,7 @@ function ElementTypeCard({
                   </>
                 ) : (
                   <button onClick={() => onAddTopPiping(i)}
-                    style={{ fontSize: 10, fontWeight: 700, color: '#9b5f72', background: '#fdf0f5', border: '1.5px solid #f0dce3', borderRadius: 8, padding: '2px 8px', cursor: 'pointer' }}>
+                    style={{ fontSize: 10, fontWeight: 700, color: '#333', background: '#fdf0f5', border: '1.5px solid #f0dce3', borderRadius: 8, padding: '2px 8px', cursor: 'pointer' }}>
                     + Add
                   </button>
                 )}
@@ -113,7 +113,7 @@ function ElementTypeCard({
                   </>
                 ) : (
                   <button onClick={() => onAddBottomPiping(i)}
-                    style={{ fontSize: 10, fontWeight: 700, color: '#9b5f72', background: '#fdf0f5', border: '1.5px solid #f0dce3', borderRadius: 8, padding: '2px 8px', cursor: 'pointer' }}>
+                    style={{ fontSize: 10, fontWeight: 700, color: '#333', background: '#fdf0f5', border: '1.5px solid #f0dce3', borderRadius: 8, padding: '2px 8px', cursor: 'pointer' }}>
                     + Add
                   </button>
                 )}
@@ -131,7 +131,7 @@ function ElementTypeCard({
       <div style={{ ...s.elementCard, cursor: 'default' }}>
         <div style={s.elementCardLabel}>{name}</div>
         {toppersDb.length === 0 && (
-          <div style={{ fontSize: 9, color: '#c9a0b0', fontStyle: 'italic' }}>No toppers yet</div>
+          <div style={{ fontSize: 9, color: '#888', fontStyle: 'italic' }}>No toppers yet</div>
         )}
         {toppersDb.map(t => {
           const isActive = design.topper?.id === t.id;
@@ -172,10 +172,10 @@ function ElementTypeCard({
   return (
     <div style={{ ...s.elementCard, cursor: 'default', opacity: 0.55 }}>
       <div style={s.elementCardLabel}>{name}</div>
-      <div style={{ fontSize: 9, color: '#c9a0b0', letterSpacing: 0.5, textAlign: 'center' }}>
+      <div style={{ fontSize: 9, color: '#888', letterSpacing: 0.5, textAlign: 'center' }}>
         {zones.map(z => ZONE_LABELS[z] ?? z).join(' · ')}
       </div>
-      <div style={{ fontSize: 9, color: '#c9a0b0', fontStyle: 'italic' }}>Coming soon</div>
+      <div style={{ fontSize: 9, color: '#888', fontStyle: 'italic' }}>Coming soon</div>
     </div>
   );
 }
@@ -772,7 +772,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
             </div>
 
             {elementTypesLoading && (
-              <div style={{ fontSize: 11, color: '#b07a8a', textAlign: 'center', padding: '16px 0' }}>Loading...</div>
+              <div style={{ fontSize: 11, color: '#666', textAlign: 'center', padding: '16px 0' }}>Loading...</div>
             )}
 
             {elementTypes.filter(et => activeElementTypeIds.has(et.id)).map(et => (
@@ -803,10 +803,10 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
               <button style={s.iconBtn} onClick={() => setTemplatesOpen(false)}>✕</button>
             </div>
             {templatesLoading && (
-              <div style={{ fontSize: 11, color: '#b07a8a', textAlign: 'center', padding: '16px 0' }}>Loading...</div>
+              <div style={{ fontSize: 11, color: '#666', textAlign: 'center', padding: '16px 0' }}>Loading...</div>
             )}
             {!templatesLoading && templates.length === 0 && (
-              <div style={{ fontSize: 11, color: '#c9a0b0', textAlign: 'center', padding: '16px 0' }}>No templates yet</div>
+              <div style={{ fontSize: 11, color: '#888', textAlign: 'center', padding: '16px 0' }}>No templates yet</div>
             )}
             {templates.map(t => (
               <div key={t.id} style={s.templateCard}
@@ -840,7 +840,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
                     <span style={s.templateBadge}>Premium</span>
                   )}
                 </div>
-                <div style={{ fontSize: 9, color: '#c9a0b0', textAlign: 'center' }}>
+                <div style={{ fontSize: 9, color: '#888', textAlign: 'center' }}>
                   {t.tier_count}-tier
                 </div>
               </div>
@@ -851,7 +851,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
         {/* ── Canvas area ── */}
         <div style={s.canvasArea}>
           <div style={s.topControls}>
-            <button style={{ ...s.addTierBtn, color: '#9b5f72' }}
+            <button style={{ ...s.addTierBtn, color: '#333' }}
               onClick={() => setSaveModal(true)}>
               Save Template
             </button>
@@ -916,7 +916,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
               {/* Resize slider — topper */}
               {caps?.resize && selectedEl?.type === 'topper' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'center', paddingTop: 4 }}>
-                  <div style={{ fontSize: 10, fontWeight: 700, color: '#b07a8a', letterSpacing: 1, textTransform: 'uppercase' }}>Size</div>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: '#666', letterSpacing: 1, textTransform: 'uppercase' }}>Size</div>
                   <input
                     type="range"
                     min={50} max={200} step={5}
@@ -924,7 +924,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
                     onChange={e => setTopperScale(Number(e.target.value) / 100)}
                     style={{ width: 200, accentColor: '#9b5f72' }}
                   />
-                  <span style={{ fontSize: 12, fontWeight: 700, color: '#9b5f72' }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: '#333' }}>
                     {Math.round((design.topper?.scale ?? 1) * 100)}%
                   </span>
                   {caps?.delete && (
@@ -966,7 +966,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
               {['standard', 'premium'].map(o => (
                 <button
                   key={o}
-                  style={{ ...s.offeringBtn, borderColor: templateOffering === o ? primaryColor : '#f0dce3', background: templateOffering === o ? hexToRgba(primaryColor, 0.08) : '#fff', color: templateOffering === o ? primaryColor : '#b07a8a' }}
+                  style={{ ...s.offeringBtn, borderColor: templateOffering === o ? primaryColor : '#f0dce3', background: templateOffering === o ? hexToRgba(primaryColor, 0.08) : '#fff', color: templateOffering === o ? primaryColor : '#666' }}
                   onClick={() => setTemplateOffering(o)}
                 >
                   {o.charAt(0).toUpperCase() + o.slice(1)}
@@ -1014,7 +1014,7 @@ const s = {
   },
   sidebarLogoImg: { maxHeight: 40, maxWidth: 100, objectFit: 'contain' },
   sidebarLogoText: {
-    fontSize: 12, fontWeight: 700, color: '#6b2d42',
+    fontSize: 12, fontWeight: 700, color: '#1a1a1a',
     textAlign: 'center', lineHeight: 1.3, wordBreak: 'break-word',
   },
   sidebarDivider: { height: 1, background: '#f0dce3', flexShrink: 0 },
@@ -1024,11 +1024,11 @@ const s = {
   sidebarBtn: {
     background: 'none', border: 'none', cursor: 'pointer',
     padding: '9px 12px', borderRadius: 8,
-    fontSize: 12, fontWeight: 600, color: '#7a5060',
+    fontSize: 12, fontWeight: 600, color: '#444',
     fontFamily: "'Quicksand',sans-serif", textAlign: 'left',
     transition: 'background 0.15s, color 0.15s',
   },
-  sidebarBtnActive: { background: '#fdf0f5', color: '#9b5f72', fontWeight: 700 },
+  sidebarBtnActive: { background: '#fdf0f5', color: '#333', fontWeight: 700 },
   sidebarProfileBtn: {
     width: 36, height: 36, borderRadius: '50%', border: 'none',
     cursor: 'pointer', color: '#fff',
@@ -1047,7 +1047,7 @@ const s = {
   topBarIconBtn: {
     width: 34, height: 34, borderRadius: 8, border: 'none',
     cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-    color: '#7a5060', transition: 'background 0.15s',
+    color: '#444', transition: 'background 0.15s',
   },
 
   // Dropdowns
@@ -1061,19 +1061,19 @@ const s = {
     padding: '6px 0', overflow: 'hidden',
   },
   dropdownSection: {
-    fontSize: 10, fontWeight: 700, color: '#c9a0b0',
+    fontSize: 10, fontWeight: 700, color: '#888',
     letterSpacing: 1, textTransform: 'uppercase',
     padding: '6px 14px 4px',
   },
   dropdownItem: {
     background: 'none', border: 'none', cursor: 'pointer',
     textAlign: 'left', padding: '8px 14px',
-    fontSize: 13, fontWeight: 500, color: '#3e2010',
+    fontSize: 13, fontWeight: 500, color: '#1a1a1a',
     fontFamily: "'Quicksand',sans-serif",
   },
   dropdownUserInfo: { padding: '10px 14px 8px' },
-  dropdownName: { fontSize: 13, fontWeight: 700, color: '#3e2010' },
-  dropdownEmail: { fontSize: 11, color: '#9b7a8a', marginTop: 2 },
+  dropdownName: { fontSize: 13, fontWeight: 700, color: '#1a1a1a' },
+  dropdownEmail: { fontSize: 11, color: '#666', marginTop: 2 },
   dropdownDivider: { height: 1, background: '#f0dce3', margin: '4px 0' },
 
   // Main + flyout panels
@@ -1091,13 +1091,13 @@ const s = {
     marginBottom: 4, flexShrink: 0,
   },
   flyoutTitle: {
-    fontSize: 10, fontWeight: 700, color: '#c9a0b0',
+    fontSize: 10, fontWeight: 700, color: '#888',
     letterSpacing: 1.5, textTransform: 'uppercase',
   },
 
   // Field label (modals)
   fieldLabel: {
-    fontSize: 11, fontWeight: 700, color: '#7a4a5a', letterSpacing: 0.3,
+    fontSize: 11, fontWeight: 700, color: '#444', letterSpacing: 0.3,
   },
   elementCard: {
     display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
@@ -1106,12 +1106,12 @@ const s = {
     transition: 'all 0.15s',
   },
   elementCardLabel: {
-    fontSize: 10, fontWeight: 700, color: '#b07a8a',
+    fontSize: 10, fontWeight: 700, color: '#666',
     letterSpacing: 0.5, textTransform: 'uppercase', textAlign: 'center',
   },
   elementCardCheck: {
     position: 'absolute', top: 6, right: 8,
-    fontSize: 11, color: '#9b5f72', fontWeight: 800,
+    fontSize: 11, color: '#333', fontWeight: 800,
   },
   templateCard: {
     border: '1.5px solid #f0dce3', borderRadius: 12,
@@ -1131,10 +1131,10 @@ const s = {
     padding: '4px 8px 0',
   },
   templateCardName: {
-    fontSize: 11, fontWeight: 700, color: '#6b2d42',
+    fontSize: 11, fontWeight: 700, color: '#1a1a1a',
   },
   templateBadge: {
-    fontSize: 9, color: '#9b5f72', fontWeight: 700,
+    fontSize: 9, color: '#333', fontWeight: 700,
     background: '#fdf0f5', border: '1px solid #f0dce3',
     borderRadius: 4, padding: '1px 5px', letterSpacing: 0.3,
   },
@@ -1144,7 +1144,7 @@ const s = {
     cursor: 'pointer', padding: '2px 0',
   },
   tierCheckLabel: {
-    fontSize: 10, fontWeight: 600, color: '#9b5f72',
+    fontSize: 10, fontWeight: 600, color: '#333',
     letterSpacing: 0.3,
   },
 
@@ -1155,7 +1155,7 @@ const s = {
   },
   loading: {
     position:'absolute', inset:0, display:'flex',
-    alignItems:'center', justifyContent:'center', color:'#b07a8a', fontSize:14,
+    alignItems:'center', justifyContent:'center', color:'#666', fontSize:14,
   },
   hint: {
     position:'absolute', top:14, left:'50%', transform:'translateX(-50%)',
@@ -1171,12 +1171,12 @@ const s = {
     zIndex:10,
     background:'#fff', border:'1.5px solid #e0d0d5', borderRadius:20,
     padding:'6px 14px', fontSize:11, fontWeight:700,
-    color:'#6b2d42', cursor:'pointer',
+    color:'#1a1a1a', cursor:'pointer',
     boxShadow:'0 2px 8px rgba(0,0,0,0.08)',
   },
   rotateHint: {
     position:'absolute', bottom:12, left:'50%', transform:'translateX(-50%)',
-    fontSize:10, color:'#c49aaa', letterSpacing:1, pointerEvents:'none',
+    fontSize:10, color:'#999', letterSpacing:1, pointerEvents:'none',
   },
 
   // Tier colour wheel panel
@@ -1192,7 +1192,7 @@ const s = {
     display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:14,
   },
   wheelTitle: {
-    fontSize:11, fontWeight:700, color:'#b07a8a', letterSpacing:1.5, textTransform:'uppercase',
+    fontSize:11, fontWeight:700, color:'#666', letterSpacing:1.5, textTransform:'uppercase',
   },
   deleteBtn: {
     flex: 1, padding: '8px 0', borderRadius: 10,
@@ -1208,7 +1208,7 @@ const s = {
   },
   iconBtn: {
     background:'#f5eaed', border:'none', width:28, height:28, borderRadius:'50%',
-    fontSize:12, color:'#9b5f72', cursor:'pointer',
+    fontSize:12, color:'#333', cursor:'pointer',
     display:'flex', alignItems:'center', justifyContent:'center', fontWeight:700,
   },
 
@@ -1234,15 +1234,15 @@ const s = {
   tbIconBtn: {
     background:'transparent', border:'none', borderRadius:8,
     padding:'4px 8px', fontSize:14, cursor:'pointer',
-    color:'#9b5f72', fontWeight:600, fontFamily:"'Quicksand',sans-serif",
+    color:'#333', fontWeight:600, fontFamily:"'Quicksand',sans-serif",
     minWidth:28, textAlign:'center',
   },
   tbSizeLabel: {
-    fontSize:13, fontWeight:700, color:'#5a3040', minWidth:26, textAlign:'center',
+    fontSize:13, fontWeight:700, color:'#222', minWidth:26, textAlign:'center',
   },
   toolbarBtn: {
     background:'#f5eaed', border:'none', borderRadius:10,
-    padding:'5px 10px', fontSize:13, cursor:'pointer', color:'#9b5f72', fontWeight:700,
+    padding:'5px 10px', fontSize:13, cursor:'pointer', color:'#333', fontWeight:700,
     flexShrink:0,
   },
 
@@ -1261,11 +1261,11 @@ const s = {
     display: 'flex', justifyContent: 'space-between', alignItems: 'center',
   },
   modalTitle: {
-    fontSize: 13, fontWeight: 700, color: '#6b2d42', letterSpacing: 0.3,
+    fontSize: 13, fontWeight: 700, color: '#1a1a1a', letterSpacing: 0.3,
   },
   modalInput: {
     border: '1.5px solid #f0dce3', borderRadius: 10, padding: '9px 12px',
-    fontSize: 13, fontFamily: "'Quicksand',sans-serif", color: '#5a3040',
+    fontSize: 13, fontFamily: "'Quicksand',sans-serif", color: '#222',
     outline: 'none', width: '100%', boxSizing: 'border-box',
   },
   offeringBtn: {
