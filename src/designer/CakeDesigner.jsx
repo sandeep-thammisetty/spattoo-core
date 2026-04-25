@@ -844,19 +844,6 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
         {/* ── Canvas area ── */}
         <div style={s.canvasArea}>
           <div style={s.topControls}>
-            <button style={{ ...s.addTierBtn, color: autoRotate ? '#6b2d42' : '#9b9b9b' }}
-              onClick={() => setAutoRotate(r => !r)}>
-              {autoRotate ? 'Stop' : 'Rotate'}
-            </button>
-            <button style={{ ...s.addTierBtn, color: '#9b5f72' }}
-              onClick={() => {
-                loadDesign({ tiers: [{ color: '#f5b8c8', decorations: [], texts: [] }], texts: [], topper: null });
-                clearAllSelections();
-                hasEdited.current = false;
-                setAutoRotate(true);
-              }}>
-              New
-            </button>
             <button style={{ ...s.addTierBtn, color: '#9b5f72' }}
               onClick={() => setSaveModal(true)}>
               Save Template
