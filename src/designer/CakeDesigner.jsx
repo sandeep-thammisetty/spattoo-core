@@ -42,14 +42,6 @@ const ZONE_LABELS = {
   side_edge:    'Side edge',
 };
 
-const TYPE_ICONS = {
-  cream_piping: '🍦',
-  topper:       '🎂',
-  text:         'T',
-  drip:         '💧',
-  sprinkle:     '✨',
-  flower:       '🌸',
-};
 
 // TOPPERS + PIPING STYLES are loaded from Supabase cake_elements table
 
@@ -62,15 +54,12 @@ function ElementTypeCard({
   onSetTopper,
 }) {
   const { slug, name, placement_rules: pr } = elementType;
-  const zones     = pr?.zones ?? [];
-  const perTier   = pr?.per_tier ?? false;
-  const icon      = TYPE_ICONS[slug] ?? '✦';
+  const zones = pr?.zones ?? [];
 
   // ── cream_piping — zone selector per tier ──────────────────────────────────
   if (slug === 'cream_piping') {
     return (
       <div style={{ ...s.elementCard, cursor: 'default' }}>
-        <span style={{ fontSize: 20 }}>{icon}</span>
         <div style={s.elementCardLabel}>{name}</div>
 
         {design.tiers.map((tier, i) => (
@@ -90,8 +79,8 @@ function ElementTypeCard({
                       style={{ width: 16, height: 16, borderRadius: '50%', flexShrink: 0, cursor: 'pointer', background: 'conic-gradient(red,yellow,lime,aqua,blue,magenta,red)', padding: 2.5, boxSizing: 'border-box' }}>
                       <div style={{ width: '100%', height: '100%', borderRadius: '50%', background: tier.topPiping.color }} />
                     </div>
-                    <button style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 13, color: '#e53935' }}
-                      onClick={() => onRemoveTopPiping(i)}>🗑</button>
+                    <button style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 13, color: '#e53935', fontWeight: 700 }}
+                      onClick={() => onRemoveTopPiping(i)}>×</button>
                   </>
                 ) : (
                   <button onClick={() => onAddTopPiping(i)}
@@ -113,8 +102,8 @@ function ElementTypeCard({
                       style={{ width: 16, height: 16, borderRadius: '50%', flexShrink: 0, cursor: 'pointer', background: 'conic-gradient(red,yellow,lime,aqua,blue,magenta,red)', padding: 2.5, boxSizing: 'border-box' }}>
                       <div style={{ width: '100%', height: '100%', borderRadius: '50%', background: tier.bottomPiping.color }} />
                     </div>
-                    <button style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 13, color: '#e53935' }}
-                      onClick={() => onRemoveBottomPiping(i)}>🗑</button>
+                    <button style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 13, color: '#e53935', fontWeight: 700 }}
+                      onClick={() => onRemoveBottomPiping(i)}>×</button>
                   </>
                 ) : (
                   <button onClick={() => onAddBottomPiping(i)}
@@ -134,7 +123,6 @@ function ElementTypeCard({
   if (slug === 'topper') {
     return (
       <div style={{ ...s.elementCard, cursor: 'default' }}>
-        <span style={{ fontSize: 20 }}>{icon}</span>
         <div style={s.elementCardLabel}>{name}</div>
         {toppersDb.length === 0 && (
           <div style={{ fontSize: 9, color: '#c9a0b0', fontStyle: 'italic' }}>No toppers yet</div>
@@ -155,15 +143,15 @@ function ElementTypeCard({
                 }} onClick={() => onSetTopper(isActive ? null : t)}>
                   {t.thumbnail_url
                     ? <img src={t.thumbnail_url} alt={t.name} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
-                    : <span style={{ fontSize: 32 }}>🎂</span>
+                    : null
                   }
                 </div>
                 {/* Label + action */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, width: '100%' }}>
                   <span style={{ ...s.tierCheckLabel, flex: 1, textAlign: 'center' }}>{t.name}</span>
                   {isActive && (
-                    <button style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 13, color: '#e53935' }}
-                      onClick={() => onSetTopper(null)}>🗑</button>
+                    <button style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 13, color: '#e53935', fontWeight: 700 }}
+                      onClick={() => onSetTopper(null)}>×</button>
                   )}
                 </div>
               </div>
@@ -177,12 +165,88 @@ function ElementTypeCard({
   // ── All other types — coming soon placeholder ──────────────────────────────
   return (
     <div style={{ ...s.elementCard, cursor: 'default', opacity: 0.55 }}>
-      <span style={{ fontSize: 20 }}>{icon}</span>
       <div style={s.elementCardLabel}>{name}</div>
       <div style={{ fontSize: 9, color: '#c9a0b0', letterSpacing: 0.5, textAlign: 'center' }}>
         {zones.map(z => ZONE_LABELS[z] ?? z).join(' · ')}
       </div>
       <div style={{ fontSize: 9, color: '#c9a0b0', fontStyle: 'italic' }}>Coming soon</div>
+    </div>
+  );
+}
+
+// ── SVG icons ─────────────────────────────────────────────────────────────────
+function GearIcon({ size = 18 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z" />
+    </svg>
+  );
+}
+
+function UserIcon({ size = 18 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2" />
+      <circle cx="12" cy="7" r="4" />
+    </svg>
+  );
+}
+
+// ── Add team member modal ──────────────────────────────────────────────────────
+function AddUserModal({ onClose }) {
+  const [form, setForm] = useState({ firstName: '', lastName: '', email: '', role: 'staff' });
+  const [loading, setLoading] = useState(false);
+  const [msg, setMsg] = useState(null);
+
+  function setField(key, val) { setForm(f => ({ ...f, [key]: val })); }
+
+  async function handleSubmit() {
+    setLoading(true); setMsg(null);
+    // TODO: POST /api/baker/invite-user
+    await new Promise(r => setTimeout(r, 600));
+    setMsg({ ok: true, text: 'Invitation sent successfully.' });
+    setLoading(false);
+  }
+
+  const canSubmit = form.firstName.trim() && form.email.trim() && !loading;
+
+  return (
+    <div style={s.modalOverlay} onClick={onClose}>
+      <div style={s.modal} onClick={e => e.stopPropagation()}>
+        <div style={s.modalHeader}>
+          <span style={s.modalTitle}>Add Team Member</span>
+          <button style={s.iconBtn} onClick={onClose}>✕</button>
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <label style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <span style={s.fieldLabel}>First name</span>
+            <input style={s.modalInput} value={form.firstName} onChange={e => setField('firstName', e.target.value)} disabled={loading} />
+          </label>
+          <label style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <span style={s.fieldLabel}>Last name</span>
+            <input style={s.modalInput} value={form.lastName} onChange={e => setField('lastName', e.target.value)} disabled={loading} />
+          </label>
+        </div>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <span style={s.fieldLabel}>Email</span>
+          <input style={s.modalInput} type="email" value={form.email} onChange={e => setField('email', e.target.value)} disabled={loading} />
+        </label>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <span style={s.fieldLabel}>Role</span>
+          <select style={{ ...s.modalInput, background: '#fff' }} value={form.role} onChange={e => setField('role', e.target.value)} disabled={loading}>
+            <option value="staff">Staff</option>
+            <option value="owner">Owner</option>
+          </select>
+        </label>
+        {msg && (
+          <div style={{ fontSize: 12, fontWeight: 600, color: msg.ok ? '#2e7d52' : '#e53935' }}>{msg.text}</div>
+        )}
+        <button style={{ ...s.orderBtn, marginTop: 4, opacity: canSubmit ? 1 : 0.6 }}
+          disabled={!canSubmit} onClick={handleSubmit}>
+          {loading ? 'Sending...' : 'Send Invitation'}
+        </button>
+      </div>
     </div>
   );
 }
@@ -234,6 +298,51 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
   const [templatesLoading, setTemplatesLoading] = useState(false);
   const hasEdited = useRef(false);
   const textInputRef = useRef();
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [profileOpen,  setProfileOpen]  = useState(false);
+  const [addUserModal, setAddUserModal] = useState(false);
+  const [bakerData,    setBakerData]    = useState(null);
+  const [userData,     setUserData]     = useState(null);
+  const settingsRef = useRef(null);
+  const profileRef  = useRef(null);
+
+  useEffect(() => {
+    if (apiClient?.fetchBakerProfile) {
+      apiClient.fetchBakerProfile()
+        .then(({ baker, user }) => {
+          if (baker) setBakerData(baker);
+          if (user)  setUserData(user);
+        })
+        .catch(() => {});
+      return;
+    }
+    if (!supabase) return;
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (!session) return;
+      const { data: contact } = await supabase
+        .from('baker_appusers')
+        .select('first_name, last_name, baker_id')
+        .eq('auth_user_id', session.user.id)
+        .maybeSingle();
+      if (!contact) return;
+      setUserData({ firstName: contact.first_name, lastName: contact.last_name, email: session.user.email });
+      const { data: baker } = await supabase
+        .from('bakers')
+        .select('id, name, logo_url')
+        .eq('id', contact.baker_id)
+        .single();
+      if (baker) setBakerData(baker);
+    });
+  }, [supabase, apiClient]);
+
+  useEffect(() => {
+    function onMouseDown(e) {
+      if (settingsRef.current && !settingsRef.current.contains(e.target)) setSettingsOpen(false);
+      if (profileRef.current  && !profileRef.current.contains(e.target))  setProfileOpen(false);
+    }
+    document.addEventListener('mousedown', onMouseDown);
+    return () => document.removeEventListener('mousedown', onMouseDown);
+  }, []);
 
   async function handleSaveTemplate() {
     if (!templateName.trim()) return;
@@ -338,6 +447,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
   async function openTemplates() {
     const isOpening = !templatesOpen;
     setTemplatesOpen(isOpening);
+    setElementsOpen(false);
     if (!isOpening) return;
     setTemplatesLoading(true);
     if (apiClient) {
@@ -511,7 +621,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
       items.push(
         <button key="style" style={{ ...s.tbIconBtn, fontSize: 10, letterSpacing: 0.3 }}
           onClick={() => { setPipingTarget({ tierIndex: el.tierIndex, zone: el.zone }); clearAllSelections(); }}>
-          ✦ Style
+          Style
         </button>,
         <div key="d2" style={s.tbDivider} />
       );
@@ -529,19 +639,19 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
 
     if (c.duplicate && el.type === 'text') {
       items.push(
-        <button key="dup" style={s.tbIconBtn} onClick={() => { duplicateText(el.id); setSelectedEl(null); }}>⧉</button>
+        <button key="dup" style={{ ...s.tbIconBtn, fontSize: 11 }} onClick={() => { duplicateText(el.id); setSelectedEl(null); }}>Copy</button>
       );
     }
 
     if (c.delete) {
       items.push(
-        <button key="del" style={{ ...s.tbIconBtn, color: '#e53935' }} onClick={handleDelete}>🗑</button>
+        <button key="del" style={{ ...s.tbIconBtn, color: '#e53935', fontSize: 11 }} onClick={handleDelete}>Remove</button>
       );
     }
 
     items.push(
-      <button key="ok" style={{ ...s.tbIconBtn, color: '#6c47ff', fontWeight: 700 }}
-        onClick={() => { setSelectedEl(null); setColorOpen(false); }}>✓</button>
+      <button key="ok" style={{ ...s.tbIconBtn, color: '#6c47ff', fontWeight: 700, fontSize: 11 }}
+        onClick={() => { setSelectedEl(null); setColorOpen(false); }}>Done</button>
     );
 
     return <div style={s.textToolbar}>{items}</div>;
@@ -551,40 +661,89 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
     <div style={s.page}>
       <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
 
+      {/* ── Top bar ── */}
+      <div style={s.topBar}>
+        <div style={{ flex: 1 }} />
+        <div style={{ position: 'relative' }} ref={settingsRef}>
+          <button style={{ ...s.topBarIconBtn, background: settingsOpen ? '#f5eaed' : 'transparent' }}
+            onClick={() => { setSettingsOpen(o => !o); setProfileOpen(false); }}>
+            <GearIcon size={16} />
+          </button>
+          {settingsOpen && (
+            <div style={{ ...s.dropdown, top: 'calc(100% + 6px)', left: 'auto', right: 0 }}>
+              <div style={s.dropdownSection}>Settings</div>
+              <button style={s.dropdownItem}
+                onClick={() => { setAddUserModal(true); setSettingsOpen(false); }}>
+                Add User
+              </button>
+            </div>
+          )}
+        </div>
+        <div style={{ position: 'relative' }} ref={profileRef}>
+          <button style={{ ...s.topBarIconBtn, background: profileOpen ? '#f5eaed' : 'transparent' }}
+            onClick={() => { setProfileOpen(o => !o); setSettingsOpen(false); }}>
+            <UserIcon size={16} />
+          </button>
+          {profileOpen && (
+            <div style={{ ...s.dropdown, top: 'calc(100% + 6px)', left: 'auto', right: 0 }}>
+              <div style={s.dropdownUserInfo}>
+                <div style={s.dropdownName}>
+                  {userData ? `${userData.firstName} ${userData.lastName}`.trim() : 'My Account'}
+                </div>
+                {userData?.email && <div style={s.dropdownEmail}>{userData.email}</div>}
+              </div>
+              <div style={s.dropdownDivider} />
+              <button style={s.dropdownItem}
+                onClick={() => { supabase?.auth.signOut(); setProfileOpen(false); }}>
+                Sign out
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── Main ── */}
       <div style={s.main}>
 
-        {/* ── Left panel ── */}
-        <div style={s.leftPanel}>
-          {/* Text button */}
-          <button style={s.elementBtn} onClick={() => { stopRotatingOnFirstEdit(); addText(); }}>
-            <span style={s.elementIcon}>T</span>
-            <span style={s.elementLabel}>Text</span>
-          </button>
+        {/* ── Sidebar ── */}
+        <div style={s.sidebar}>
+          <div style={s.sidebarLogo}>
+            {bakerData?.logo_url
+              ? <img src={bakerData.logo_url} alt="" style={s.sidebarLogoImg} />
+              : <div style={s.sidebarLogoText}>{bakerData?.name ?? 'My Bakery'}</div>
+            }
+          </div>
 
-          {/* Elements button */}
-          <button
-            style={{ ...s.elementBtn, borderColor: elementsOpen ? '#9b5f72' : '#f0dce3', background: elementsOpen ? '#fdf0f5' : 'none' }}
-            onClick={openElements}
-          >
-            <span style={{ fontSize: 22 }}>✦</span>
-            <span style={s.elementLabel}>Elements</span>
-          </button>
+          <div style={s.sidebarDivider} />
 
-          {/* Templates button */}
-          <button
-            style={{ ...s.elementBtn, borderColor: templatesOpen ? '#9b5f72' : '#f0dce3', background: templatesOpen ? '#fdf0f5' : 'none' }}
-            onClick={() => { openTemplates(); setElementsOpen(false); }}
-          >
-            <span style={{ fontSize: 20 }}>⊞</span>
-            <span style={s.elementLabel}>Templates</span>
-          </button>
+          <nav style={s.sidebarNav}>
+            {[
+              { id: 'text',      label: 'Text'      },
+              { id: 'elements',  label: 'Elements'  },
+              { id: 'templates', label: 'Templates' },
+            ].map(({ id, label }) => {
+              const active = id === 'elements' ? elementsOpen : id === 'templates' ? templatesOpen : false;
+              return (
+                <button key={id}
+                  style={{ ...s.sidebarBtn, ...(active ? s.sidebarBtnActive : {}) }}
+                  onClick={() => {
+                    if (id === 'text')      { stopRotatingOnFirstEdit(); addText(); }
+                    if (id === 'elements')  openElements();
+                    if (id === 'templates') openTemplates();
+                  }}>
+                  {label}
+                </button>
+              );
+            })}
+          </nav>
+
         </div>
 
-        {/* ── Elements flyout panel ── */}
+        {/* ── Elements flyout ── */}
         {elementsOpen && (
-          <div style={s.elementsPanel}>
-            <div style={s.elementsPanelHeader}>
-              <span style={s.elementsPanelTitle}>Elements</span>
+          <div style={s.flyout}>
+            <div style={s.flyoutHeader}>
+              <span style={s.flyoutTitle}>Elements</span>
               <button style={s.iconBtn} onClick={() => setElementsOpen(false)}>✕</button>
             </div>
 
@@ -612,11 +771,11 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
           </div>
         )}
 
-        {/* ── Templates flyout panel ── */}
+        {/* ── Templates flyout ── */}
         {templatesOpen && (
-          <div style={s.elementsPanel}>
-            <div style={s.elementsPanelHeader}>
-              <span style={s.elementsPanelTitle}>Templates</span>
+          <div style={s.flyout}>
+            <div style={s.flyoutHeader}>
+              <span style={s.flyoutTitle}>Templates</span>
               <button style={s.iconBtn} onClick={() => setTemplatesOpen(false)}>✕</button>
             </div>
             {templatesLoading && (
@@ -649,12 +808,12 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
               >
                 {t.thumbnail_url
                   ? <img src={t.thumbnail_url} alt={t.name} style={{ width: '100%', height: 100, objectFit: 'cover', borderRadius: 8 }} />
-                  : <div style={s.templateThumbPlaceholder}>🎂</div>
+                  : <div style={s.templateThumbPlaceholder} />
                 }
                 <div style={s.templateCardFooter}>
                   <span style={s.templateCardName}>{t.name}</span>
                   {t.offering === 'premium' && (
-                    <span style={s.templateBadge}>★</span>
+                    <span style={s.templateBadge}>Premium</span>
                   )}
                 </div>
                 <div style={{ fontSize: 9, color: '#c9a0b0', textAlign: 'center' }}>
@@ -670,7 +829,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
           <div style={s.topControls}>
             <button style={{ ...s.addTierBtn, color: autoRotate ? '#6b2d42' : '#9b9b9b' }}
               onClick={() => setAutoRotate(r => !r)}>
-              {autoRotate ? '⏸ Stop' : '▶ Rotate'}
+              {autoRotate ? 'Stop' : 'Rotate'}
             </button>
             <button style={{ ...s.addTierBtn, color: '#9b5f72' }}
               onClick={() => {
@@ -679,11 +838,11 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
                 hasEdited.current = false;
                 setAutoRotate(true);
               }}>
-              ✕ New
+              New
             </button>
             <button style={{ ...s.addTierBtn, color: '#9b5f72' }}
               onClick={() => setSaveModal(true)}>
-              ⬆ Save Template
+              Save Template
             </button>
           </div>
           {!selectedEl && (
@@ -759,8 +918,8 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
                   </span>
                   {caps?.delete && (
                     <div style={{ display: 'flex', gap: 8, width: '100%', marginTop: 4 }}>
-                      <button style={s.deleteBtn} onClick={handleDelete}>🗑 Remove</button>
-                      <button style={s.doneBtn} onClick={() => setSelectedEl(null)}>✓ Done</button>
+                      <button style={s.deleteBtn} onClick={handleDelete}>Remove</button>
+                      <button style={s.doneBtn} onClick={() => setSelectedEl(null)}>Done</button>
                     </div>
                   )}
                 </div>
@@ -768,12 +927,12 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
             </div>
           )}
         </div>
-      </div>
+      </div>{/* end main */}
 
       {/* ── Order button ── */}
       {selectedEl?.type !== 'text' && (
         <div style={s.orderBar}>
-          <button style={s.orderBtn} onClick={handleOrder}>Order This Cake →</button>
+          <button style={s.orderBtn} onClick={handleOrder}>Order This Cake</button>
         </div>
       )}
 
@@ -799,7 +958,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
                   style={{ ...s.offeringBtn, borderColor: templateOffering === o ? '#9b5f72' : '#f0dce3', background: templateOffering === o ? '#fdf0f5' : '#fff', color: templateOffering === o ? '#9b5f72' : '#b07a8a' }}
                   onClick={() => setTemplateOffering(o)}
                 >
-                  {o === 'premium' ? '★ ' : ''}{o.charAt(0).toUpperCase() + o.slice(1)}
+                  {o.charAt(0).toUpperCase() + o.slice(1)}
                 </button>
               ))}
             </div>
@@ -818,6 +977,9 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
           </div>
         </div>
       )}
+
+      {/* ── Add User modal ── */}
+      {addUserModal && <AddUserModal onClose={() => setAddUserModal(false)} />}
     </div>
   );
 }
@@ -828,49 +990,96 @@ const s = {
     display:'flex', flexDirection:'column', height:'100vh',
     background:'#fdf0f5', fontFamily:"'Quicksand',sans-serif", overflow:'hidden',
   },
-  main: { flex:1, display:'flex', minHeight:0 },
 
-  // Left panel
-  leftPanel: {
-    width:80, minWidth:80, background:'#fff',
-    borderRight:'1px solid #f0dce3',
-    display:'flex', flexDirection:'column', alignItems:'center',
-    paddingTop:12, gap:4,
+  // Sidebar
+  sidebar: {
+    width: 130, minWidth: 130, background: '#fff',
+    borderRight: '1px solid #f0dce3',
+    display: 'flex', flexDirection: 'column', flexShrink: 0,
   },
-  panelHeader: {
-    fontSize:9, fontWeight:700, color:'#c9a0b0',
-    letterSpacing:1.5, textTransform:'uppercase', marginBottom:8,
+  sidebarLogo: {
+    height: 68, display: 'flex', alignItems: 'center', justifyContent: 'center',
+    padding: '0 14px', flexShrink: 0,
   },
-  elementBtn: {
-    display:'flex', flexDirection:'column', alignItems:'center', gap:4,
-    background:'none', border:'1.5px solid #f0dce3', borderRadius:12,
-    padding:'10px 8px', cursor:'pointer', width:60,
-    transition:'all 0.15s',
+  sidebarLogoImg: { maxHeight: 40, maxWidth: 100, objectFit: 'contain' },
+  sidebarLogoText: {
+    fontSize: 12, fontWeight: 700, color: '#6b2d42',
+    textAlign: 'center', lineHeight: 1.3, wordBreak: 'break-word',
   },
-  elementIcon: {
-    fontSize:22, fontWeight:800, color:'#9b5f72',
-    fontFamily:"'Playfair Display',serif",
+  sidebarDivider: { height: 1, background: '#f0dce3', flexShrink: 0 },
+  sidebarNav: {
+    display: 'flex', flexDirection: 'column', padding: '10px 8px', gap: 2,
   },
-  elementLabel: {
-    fontSize:9, fontWeight:700, color:'#b07a8a',
-    letterSpacing:0.5, textTransform:'uppercase',
+  sidebarBtn: {
+    background: 'none', border: 'none', cursor: 'pointer',
+    padding: '9px 12px', borderRadius: 8,
+    fontSize: 12, fontWeight: 600, color: '#7a5060',
+    fontFamily: "'Quicksand',sans-serif", textAlign: 'left',
+    transition: 'background 0.15s, color 0.15s',
+  },
+  sidebarBtnActive: { background: '#fdf0f5', color: '#9b5f72', fontWeight: 700 },
+
+  // Top bar (settings + profile)
+  topBar: {
+    height: 44, minHeight: 44, background: '#fff',
+    borderBottom: '1px solid #f0dce3',
+    display: 'flex', alignItems: 'center',
+    padding: '0 12px', gap: 4, flexShrink: 0,
+  },
+  topBarIconBtn: {
+    width: 34, height: 34, borderRadius: 8, border: 'none',
+    cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+    color: '#7a5060', transition: 'background 0.15s',
   },
 
-  // Elements flyout
-  elementsPanel: {
-    width: 160, background: '#fff',
+  // Dropdowns
+  dropdown: {
+    position: 'absolute', top: 0, left: 'calc(100% + 8px)',
+    background: '#fff', borderRadius: 10,
+    border: '1px solid #f0dce3',
+    boxShadow: '0 4px 20px rgba(107,45,66,0.14)',
+    minWidth: 160, zIndex: 50,
+    display: 'flex', flexDirection: 'column',
+    padding: '6px 0', overflow: 'hidden',
+  },
+  dropdownSection: {
+    fontSize: 10, fontWeight: 700, color: '#c9a0b0',
+    letterSpacing: 1, textTransform: 'uppercase',
+    padding: '6px 14px 4px',
+  },
+  dropdownItem: {
+    background: 'none', border: 'none', cursor: 'pointer',
+    textAlign: 'left', padding: '8px 14px',
+    fontSize: 13, fontWeight: 500, color: '#3e2010',
+    fontFamily: "'Quicksand',sans-serif",
+  },
+  dropdownUserInfo: { padding: '10px 14px 8px' },
+  dropdownName: { fontSize: 13, fontWeight: 700, color: '#3e2010' },
+  dropdownEmail: { fontSize: 11, color: '#9b7a8a', marginTop: 2 },
+  dropdownDivider: { height: 1, background: '#f0dce3', margin: '4px 0' },
+
+  // Main + flyout panels
+  main: { flex: 1, display: 'flex', minHeight: 0 },
+  flyout: {
+    width: 180, background: '#fff',
     borderRight: '1px solid #f0dce3',
     display: 'flex', flexDirection: 'column',
     padding: '12px 10px', gap: 10,
+    overflowY: 'auto',
     boxShadow: '2px 0 12px rgba(107,45,66,0.08)',
   },
-  elementsPanelHeader: {
+  flyoutHeader: {
     display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-    marginBottom: 4,
+    marginBottom: 4, flexShrink: 0,
   },
-  elementsPanelTitle: {
+  flyoutTitle: {
     fontSize: 10, fontWeight: 700, color: '#c9a0b0',
     letterSpacing: 1.5, textTransform: 'uppercase',
+  },
+
+  // Field label (modals)
+  fieldLabel: {
+    fontSize: 11, fontWeight: 700, color: '#7a4a5a', letterSpacing: 0.3,
   },
   elementCard: {
     display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
@@ -907,7 +1116,9 @@ const s = {
     fontSize: 11, fontWeight: 700, color: '#6b2d42',
   },
   templateBadge: {
-    fontSize: 10, color: '#e89a00', fontWeight: 800,
+    fontSize: 9, color: '#9b5f72', fontWeight: 700,
+    background: '#fdf0f5', border: '1px solid #f0dce3',
+    borderRadius: 4, padding: '1px 5px', letterSpacing: 0.3,
   },
 
   tierCheckRow: {

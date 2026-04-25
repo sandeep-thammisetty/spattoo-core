@@ -36,6 +36,7 @@ function createApiClient(supabaseClient) {
     },
     fetchTemplates: () => authFetch('/api/templates'),
     fetchTemplate: (id) => authFetch(`/api/templates/${id}`),
+    fetchBakerProfile: () => authFetch('/api/baker/profile'),
   };
 }
 

@@ -55,7 +55,7 @@ function Btn({ children, onClick, disabled }) {
   );
 }
 
-function Card({ title, subtitle, emoji, children }) {
+function Card({ title, subtitle, children }) {
   return (
     <div style={{
       display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -69,8 +69,7 @@ function Card({ title, subtitle, emoji, children }) {
         display: 'flex', flexDirection: 'column', gap: 20,
       }}>
         <div style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: 28 }}>{emoji}</div>
-          <h1 style={{ margin: '8px 0 4px', fontSize: 20, fontWeight: 700, color: BRAND }}>{title}</h1>
+          <h1 style={{ margin: '0 0 4px', fontSize: 20, fontWeight: 700, color: BRAND }}>{title}</h1>
           <p style={{ margin: 0, fontSize: 13, color: '#a07080' }}>{subtitle}</p>
         </div>
         {children}
@@ -96,12 +95,11 @@ const linkStyle = {
   color: BRAND, fontFamily: FONT, fontWeight: 600, fontSize: 12, padding: 0,
 };
 
-// ── Auth forms (login / signup / forgot) ──────────────────────────────────────
-function AuthForms({ supabase }) {
+// ── Auth forms (login / forgot) ───────────────────────────────────────────────
+function AuthForms({ supabase, noAccountError }) {
   const [mode, setMode] = useState('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [name, setName] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [info, setInfo] = useState('');
@@ -115,17 +113,6 @@ function AuthForms({ supabase }) {
     setLoading(false);
   }
 
-  async function handleSignup() {
-    setLoading(true); reset();
-    const { error } = await supabase.auth.signUp({
-      email, password,
-      options: { data: { full_name: name } },
-    });
-    if (error) setError(error.message);
-    else setInfo('Check your email to confirm your account, then sign in.');
-    setLoading(false);
-  }
-
   async function handleForgot() {
     setLoading(true); reset();
     const { error } = await supabase.auth.resetPasswordForEmail(email);
@@ -134,149 +121,85 @@ function AuthForms({ supabase }) {
     setLoading(false);
   }
 
-  const titles    = { login: 'Welcome back',   signup: 'Create account', forgot: 'Reset password' };
-  const subtitles = { login: 'Sign in to manage your bakery', signup: 'Set up your spattoo account', forgot: "We'll email you a reset link" };
+  const titles    = { login: 'Welcome back',   forgot: 'Reset password' };
+  const subtitles = { login: 'Sign in to manage your bakery', forgot: "We'll email you a reset link" };
 
   return (
-    <Card title={titles[mode]} subtitle={subtitles[mode]} emoji="🎂">
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        {mode === 'signup' && (
-          <Input label="Full name" value={name} onChange={setName} disabled={loading} />
-        )}
+    <Card title={titles[mode]} subtitle={subtitles[mode]}>
+      <form onSubmit={e => { e.preventDefault(); mode === 'login' ? handleLogin() : handleForgot(); }}
+            style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         <Input label="Email" type="email" value={email} onChange={setEmail} disabled={loading} />
         {mode !== 'forgot' && (
           <Input label="Password" type="password" value={password} onChange={setPassword} disabled={loading} />
         )}
-      </div>
 
-      {error && <Alert message={error} type="error" />}
-      {info  && <Alert message={info}  type="info"  />}
+        {noAccountError && mode === 'login' && !error && (
+          <Alert message="No bakery account found. Contact your administrator." type="error" />
+        )}
+        {error && <Alert message={error} type="error" />}
+        {info  && <Alert message={info}  type="info"  />}
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {mode === 'login' && (
-          <>
-            <Btn onClick={handleLogin} disabled={loading || !email || !password}>
-              {loading ? 'Signing in…' : 'Sign in'}
-            </Btn>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <button onClick={() => { setMode('signup'); reset(); }} style={linkStyle}>Create account</button>
-              <button onClick={() => { setMode('forgot'); reset(); }} style={linkStyle}>Forgot password?</button>
-            </div>
-          </>
-        )}
-        {mode === 'signup' && (
-          <>
-            <Btn onClick={handleSignup} disabled={loading || !email || !password || !name}>
-              {loading ? 'Creating account…' : 'Create account'}
-            </Btn>
-            <button onClick={() => { setMode('login'); reset(); }} style={{ ...linkStyle, textAlign: 'center' }}>
-              Already have an account? Sign in
-            </button>
-          </>
-        )}
-        {mode === 'forgot' && (
-          <>
-            <Btn onClick={handleForgot} disabled={loading || !email}>
-              {loading ? 'Sending…' : 'Send reset link'}
-            </Btn>
-            <button onClick={() => { setMode('login'); reset(); }} style={{ ...linkStyle, textAlign: 'center' }}>
-              Back to sign in
-            </button>
-          </>
-        )}
-      </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {mode === 'login' && (
+            <>
+              <Btn onClick={handleLogin} disabled={loading || !email || !password}>
+                {loading ? 'Signing in…' : 'Sign in'}
+              </Btn>
+              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                <button type="button" onClick={() => { setMode('forgot'); reset(); }} style={linkStyle}>Forgot password?</button>
+              </div>
+            </>
+          )}
+          {mode === 'forgot' && (
+            <>
+              <Btn onClick={handleForgot} disabled={loading || !email}>
+                {loading ? 'Sending…' : 'Send reset link'}
+              </Btn>
+              <button type="button" onClick={() => { setMode('login'); reset(); }} style={{ ...linkStyle, textAlign: 'center' }}>
+                Back to sign in
+              </button>
+            </>
+          )}
+        </div>
+      </form>
     </Card>
   );
 }
 
-// ── Onboarding: new user, no baker_contacts row yet ───────────────────────────
-function Onboarding({ supabase, session, onComplete }) {
-  const [bakeryName, setBakeryName] = useState('');
-  const [fullName, setFullName]     = useState(session.user.user_metadata?.full_name ?? '');
-  const [phone, setPhone]           = useState('');
-  const [loading, setLoading]       = useState(false);
-  const [error, setError]           = useState('');
-
-  async function handleSetup() {
-    setLoading(true); setError('');
-
-    // 1. Create the baker (bakery entity)
-    const { data: baker, error: bakerErr } = await supabase
-      .from('bakers')
-      .insert({ name: bakeryName.trim() })
-      .select('id')
-      .single();
-
-    if (bakerErr) { setError(bakerErr.message); setLoading(false); return; }
-
-    // 2. Create the baker_contacts row linked to auth user
-    const { error: contactErr } = await supabase
-      .from('baker_contacts')
-      .insert({
-        auth_user_id: session.user.id,
-        baker_id:     baker.id,
-        name:         fullName.trim(),
-        email:        session.user.email,
-        phone:        phone.trim() || null,
-        role:         'owner',
-        is_primary:   true,
-      });
-
-    if (contactErr) { setError(contactErr.message); setLoading(false); return; }
-
-    onComplete();
-  }
-
-  return (
-    <Card title="Set up your bakery" subtitle="Just a few details to get started" emoji="🏪">
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <Input label="Bakery name"  value={bakeryName} onChange={setBakeryName} disabled={loading} placeholder="e.g. Sweet Layers Bakery" />
-        <Input label="Your name"    value={fullName}   onChange={setFullName}   disabled={loading} />
-        <Input label="Phone (optional)" value={phone}  onChange={setPhone}      disabled={loading} placeholder="+1 555 000 0000" />
-      </div>
-
-      {error && <Alert message={error} type="error" />}
-
-      <Btn onClick={handleSetup} disabled={loading || !bakeryName.trim() || !fullName.trim()}>
-        {loading ? 'Setting up…' : 'Create my bakery'}
-      </Btn>
-
-      <button
-        onClick={() => supabase.auth.signOut()}
-        style={{ ...linkStyle, textAlign: 'center', fontSize: 12 }}
-      >
-        Sign out
-      </button>
-    </Card>
-  );
-}
 
 // ── AuthGate ──────────────────────────────────────────────────────────────────
 export default function AuthGate({ supabase, children }) {
-  const [session, setSession]   = useState(undefined); // undefined = loading
-  const [contact, setContact]   = useState(undefined); // undefined = loading, null = not found
-  const [checking, setChecking] = useState(false);
+  const [session, setSession]     = useState(undefined); // undefined = loading
+  const [contact, setContact]     = useState(undefined); // undefined = loading, null = not found
+  const [checking, setChecking]   = useState(false);
+  const [noAccountErr, setNoAccountErr] = useState(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session ?? null));
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => {
       setSession(s ?? null);
-      if (!s) setContact(undefined); // reset on logout
+      if (!s) { setContact(undefined); setNoAccountErr(false); }
     });
     return () => subscription.unsubscribe();
   }, [supabase]);
 
-  // When session arrives, check for baker_contacts row
+  // When session arrives, check for baker_appusers row
   useEffect(() => {
     if (!session) return;
     setChecking(true);
     supabase
-      .from('baker_contacts')
-      .select('id, auth_user_id, baker_id, name, role, is_primary')
+      .from('baker_appusers')
+      .select('id')
       .eq('auth_user_id', session.user.id)
       .maybeSingle()
-      .then(({ data }) => {
-        setContact(data ?? null);
+      .then(({ data, error }) => {
+        if (error) console.error('baker_appusers lookup failed:', error.message, error.code);
+        if (!data) {
+          setNoAccountErr(true);
+          supabase.auth.signOut();
+          return;
+        }
+        setContact(data);
         setChecking(false);
       });
   }, [session, supabase]);
@@ -292,25 +215,7 @@ export default function AuthGate({ supabase, children }) {
     );
   }
 
-  if (!session) return <AuthForms supabase={supabase} />;
-
-  if (!contact) {
-    return (
-      <Onboarding
-        supabase={supabase}
-        session={session}
-        onComplete={() => {
-          // Re-fetch contact after onboarding completes
-          supabase
-            .from('baker_contacts')
-            .select('id, baker_id, full_name, role, is_primary')
-            .eq('id', session.user.id)
-            .maybeSingle()
-            .then(({ data }) => setContact(data ?? null));
-        }}
-      />
-    );
-  }
+  if (!session) return <AuthForms supabase={supabase} noAccountError={noAccountErr} />;
 
   return children;
 }
