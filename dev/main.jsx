@@ -37,6 +37,13 @@ function createApiClient(supabaseClient) {
     fetchTemplates: () => authFetch('/api/templates'),
     fetchTemplate: (id) => authFetch(`/api/templates/${id}`),
     fetchBakerProfile: () => authFetch('/api/baker/profile'),
+    getSignedUploadUrl: (folder, filename, contentType) =>
+      authFetch('/api/storage/sign-upload', {
+        method: 'POST',
+        body: JSON.stringify({ folder, filename, contentType }),
+      }),
+    signOut: () => supabaseClient.auth.signOut(),
+    changePassword: (newPassword) => supabaseClient.auth.updateUser({ password: newPassword }),
   };
 }
 

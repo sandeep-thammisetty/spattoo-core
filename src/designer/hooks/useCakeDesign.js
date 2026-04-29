@@ -128,7 +128,13 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
           const d = t.decorations.find(d => d.type === 'base_border');
           bottomPiping = { glbUrl: legacyGlbUrl, name: 'Shell', color: d.color ?? '#f5e6c8' };
         }
-        return { color: t.color ?? '#ffffff', topPiping, bottomPiping };
+        return {
+          color:        t.color ?? '#ffffff',
+          topPiping,
+          bottomPiping,
+          ...(t.radius != null  && { radius: t.radius }),
+          ...(t.height != null  && { height: t.height }),
+        };
       }),
       texts: templateDesign.texts ?? [],
       topper: templateDesign.topper ? { ...templateDesign.topper, scale: templateDesign.topper.scale ?? 1 } : null,
@@ -137,8 +143,8 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
 
   const canvasConfig = useMemo(() => ({
     tiers: design.tiers.map((t, i) => ({
-      radius:       TIER_RADII[i] ?? 0.35,
-      height:       1.45 - i * 0.08,
+      radius:       t.radius  ?? TIER_RADII[i] ?? 0.35,
+      height:       t.height  ?? (1.45 - i * 0.08),
       color:        t.color,
       frostingType: t.frostingType ?? 'buttercream',
       topPiping:    t.topPiping ?? null,

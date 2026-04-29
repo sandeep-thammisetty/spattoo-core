@@ -1,6 +1,6 @@
 import { Suspense, useState, useEffect, useRef, useMemo } from 'react';
 import { HexColorPicker } from 'react-colorful';
-import CakeCanvas from './canvas/CakeCanvas';
+import CakeCanvas, { CakeThumbnailCanvas, preloadTopper } from './canvas/CakeCanvas';
 import { useCakeDesign } from './hooks/useCakeDesign';
 
 // Tier caps are hardcoded — tiers are not element_types rows, they're the cake structure itself
@@ -199,6 +199,147 @@ function UserIcon({ size = 18 }) {
   );
 }
 
+function TemplatesIcon({ size = 20 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      {/* Flame */}
+      <path d="M12 2 C11 3 10.5 4.5 12 5.2 C13.5 4.5 13 3 12 2Z" />
+      {/* Candle */}
+      <line x1="12" y1="5.2" x2="12" y2="8" />
+      {/* Top tier */}
+      <rect x="5" y="8" width="14" height="6" rx="2" />
+      {/* Bottom tier */}
+      <rect x="2" y="14" width="20" height="8" rx="2" />
+    </svg>
+  );
+}
+
+function ElementsIcon({ size = 20 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 2L2 7l10 5 10-5-10-5z" />
+      <path d="M2 17l10 5 10-5" />
+      <path d="M2 12l10 5 10-5" />
+    </svg>
+  );
+}
+
+function TextIcon({ size = 20 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="4 7 4 4 20 4 20 7" />
+      <line x1="9" y1="20" x2="15" y2="20" />
+      <line x1="12" y1="4" x2="12" y2="20" />
+    </svg>
+  );
+}
+
+// ── Sidebar tooltip ───────────────────────────────────────────────────────────
+function SidebarTooltip({ label, children }) {
+  const [visible, setVisible] = useState(false);
+  return (
+    <div style={{ position: 'relative', display: 'flex' }}
+      onMouseEnter={() => setVisible(true)}
+      onMouseLeave={() => setVisible(false)}>
+      {children}
+      <div style={{
+        position: 'absolute',
+        left: 'calc(100% + 12px)',
+        top: '50%',
+        background: '#18191b',
+        color: '#fff',
+        fontSize: 12,
+        fontWeight: 600,
+        padding: '6px 10px',
+        borderRadius: 6,
+        whiteSpace: 'nowrap',
+        pointerEvents: 'none',
+        zIndex: 200,
+        boxShadow: '0 2px 10px rgba(0,0,0,0.25)',
+        fontFamily: "'Quicksand', sans-serif",
+        letterSpacing: 0.3,
+        opacity: visible ? 1 : 0,
+        transform: visible ? 'translateY(-50%) translateX(0)' : 'translateY(-50%) translateX(-4px)',
+        transition: 'opacity 0.15s ease, transform 0.15s ease',
+      }}>
+        {label}
+      </div>
+    </div>
+  );
+}
+
+// ── Change password modal ─────────────────────────────────────────────────────
+function ChangePasswordModal({ onClose, brandBtn, supabase, apiClient }) {
+  const [form, setForm] = useState({ newPassword: '', confirmPassword: '' });
+  const [loading, setLoading] = useState(false);
+  const [msg, setMsg] = useState(null);
+
+  function setField(key, val) { setForm(f => ({ ...f, [key]: val })); }
+
+  async function handleSubmit() {
+    if (form.newPassword !== form.confirmPassword) {
+      setMsg({ ok: false, text: 'Passwords do not match.' });
+      return;
+    }
+    if (form.newPassword.length < 8) {
+      setMsg({ ok: false, text: 'Password must be at least 8 characters.' });
+      return;
+    }
+    setLoading(true);
+    setMsg(null);
+    try {
+      if (apiClient?.changePassword) {
+        await apiClient.changePassword(form.newPassword);
+      } else if (supabase) {
+        const { error } = await supabase.auth.updateUser({ password: form.newPassword });
+        if (error) throw error;
+      }
+      setMsg({ ok: true, text: 'Password updated. Signing you out…' });
+      // Supabase invalidates the session on password change — sign out cleanly
+      // so the user lands on the login screen and re-authenticates with the new password.
+      setTimeout(() => {
+        apiClient?.signOut?.() ?? supabase?.auth.signOut();
+      }, 1200);
+    } catch (err) {
+      setMsg({ ok: false, text: err.message || 'Failed to update password.' });
+      setLoading(false);
+    }
+  }
+
+  const canSubmit = form.newPassword && form.confirmPassword && !loading;
+
+  return (
+    <div style={s.modalOverlay} onClick={onClose}>
+      <div style={s.modal} onClick={e => e.stopPropagation()}>
+        <div style={s.modalHeader}>
+          <span style={s.modalTitle}>Change Password</span>
+          <button style={s.iconBtn} onClick={onClose}>✕</button>
+        </div>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <span style={s.fieldLabel}>New password</span>
+          <input style={s.modalInput} type="password" value={form.newPassword}
+            onChange={e => setField('newPassword', e.target.value)} disabled={loading} autoFocus />
+        </label>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <span style={s.fieldLabel}>Confirm new password</span>
+          <input style={s.modalInput} type="password" value={form.confirmPassword}
+            onChange={e => setField('confirmPassword', e.target.value)} disabled={loading}
+            onKeyDown={e => e.key === 'Enter' && canSubmit && handleSubmit()} />
+        </label>
+        {msg && (
+          <div style={{ fontSize: 12, fontWeight: 600, color: msg.ok ? '#2e7d52' : '#e53935' }}>
+            {msg.text}
+          </div>
+        )}
+        <button style={{ ...s.orderBtn, ...(brandBtn || {}), marginTop: 4, opacity: canSubmit ? 1 : 0.6 }}
+          disabled={!canSubmit} onClick={handleSubmit}>
+          {loading ? 'Updating...' : 'Update Password'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── Add team member modal ──────────────────────────────────────────────────────
 function AddUserModal({ onClose, brandBtn }) {
   const [form, setForm] = useState({ firstName: '', lastName: '', email: '', role: 'staff' });
@@ -258,7 +399,7 @@ function AddUserModal({ onClose, brandBtn }) {
 }
 
 // ── Main designer ─────────────────────────────────────────────────────────────
-export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'cake-thumbnails', onOrder }) {
+export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'cake-thumbnails', onOrder, onSaveTemplate }) {
   const { design, setTierColor, setTopPiping, setBottomPiping, addText, updateText, duplicateText, removeText, setTopper, setTopperScale, loadDesign, canvasConfig } = useCakeDesign();
   const [elementsOpen, setElementsOpen] = useState(false);
   const [elementTypes, setElementTypes] = useState([]);
@@ -304,19 +445,22 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
   const [templatesLoading, setTemplatesLoading] = useState(false);
   const hasEdited = useRef(false);
   const textInputRef = useRef();
+  const thumbContainerRef = useRef();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [profileOpen,  setProfileOpen]  = useState(false);
-  const [addUserModal, setAddUserModal] = useState(false);
+  const [addUserModal,        setAddUserModal]        = useState(false);
+  const [changePasswordModal, setChangePasswordModal] = useState(false);
+  const [bakerReady,          setBakerReady]          = useState(false);
   const [bakerData,    setBakerData]    = useState(null);
   const [userData,     setUserData]     = useState(null);
   const settingsRef = useRef(null);
   const profileRef  = useRef(null);
 
-  const primaryColor = bakerData?.primary_color || '#e91e8c';
-  const accentColor  = bakerData?.accent_color  || '#c2185b';
+  const primaryColor = bakerData?.primary_color || '#1a1a1a';
+  const accentColor  = bakerData?.accent_color  || '#333333';
   const brandBtn = {
     background: `linear-gradient(135deg, ${primaryColor}, ${accentColor})`,
-    boxShadow: `0 4px 16px ${hexToRgba(primaryColor, 0.3)}`,
+    boxShadow: `0 4px 16px ${hexToRgba(primaryColor, 0.25)}`,
   };
   const brandActive = {
     background: hexToRgba(primaryColor, 0.1),
@@ -333,18 +477,19 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
           if (baker) setBakerData(baker);
           if (user)  setUserData(user);
         })
-        .catch(() => {});
+        .catch(() => {})
+        .finally(() => setBakerReady(true));
       return;
     }
-    if (!supabase) return;
+    if (!supabase) { setBakerReady(true); return; }
     supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (!session) return;
+      if (!session) { setBakerReady(true); return; }
       const { data: contact } = await supabase
         .from('baker_appusers')
         .select('first_name, last_name, baker_id')
         .eq('auth_user_id', session.user.id)
         .maybeSingle();
-      if (!contact) return;
+      if (!contact) { setBakerReady(true); return; }
       setUserData({ firstName: contact.first_name, lastName: contact.last_name, email: session.user.email });
       const { data: baker } = await supabase
         .from('bakers')
@@ -352,6 +497,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
         .eq('id', contact.baker_id)
         .single();
       if (baker) setBakerData(baker);
+      setBakerReady(true);
     });
   }, [supabase, apiClient]);
 
@@ -369,39 +515,57 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
     setSaving(true);
     setSaveMsg(null);
 
-    // Capture screenshot
-    const canvas = document.querySelector('canvas');
-    const thumbnailDataUrl = canvas?.toDataURL('image/png') ?? null;
-
-    // Upload thumbnail to Supabase Storage
-    let thumbnail_url = null;
-    if (thumbnailDataUrl) {
-      const blob = await (await fetch(thumbnailDataUrl)).blob();
-      const fileName = `template-${Date.now()}.png`;
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from(thumbnailBucket)
-        .upload(fileName, blob, { contentType: 'image/png', upsert: false });
-      if (!uploadError) {
-        const { data: { publicUrl } } = supabase.storage
-          .from(thumbnailBucket)
-          .getPublicUrl(fileName);
-        thumbnail_url = publicUrl;
-      }
-    }
+    // Capture from the off-screen thumbnail canvas (no floor, transparent bg)
+    const thumbCanvas = thumbContainerRef.current?.querySelector('canvas');
+    const thumbnailBlob = await new Promise(resolve => {
+      if (!thumbCanvas) return resolve(null);
+      thumbCanvas.toBlob(blob => resolve(blob ?? null), 'image/png');
+    });
 
     // Build design JSON
     const designJson = {
       shape: 'round',
       tiers: design.tiers.map(t => ({
-        color: t.color,
-        topPiping:    t.topPiping ?? null,
+        color:        t.color,
+        topPiping:    t.topPiping    ?? null,
         bottomPiping: t.bottomPiping ?? null,
-        decorations: [], // kept for backward compat
-        texts: [],
+        decorations:  [],
+        texts:        [],
+        ...(t.radius != null && { radius: t.radius }),
+        ...(t.height != null && { height: t.height }),
       })),
-      texts: design.texts,
-      topper: null,
+      texts:  design.texts,
+      topper: design.topper ?? null,
     };
+
+    if (onSaveTemplate) {
+      try {
+        await onSaveTemplate({
+          name:      templateName.trim(),
+          offering:  templateOffering,
+          tierCount: design.tiers.length,
+          designJson,
+          thumbnailBlob,
+        });
+        setSaveMsg({ ok: true, text: 'Template saved!' });
+        setTimeout(() => { setSaveModal(false); setSaveMsg(null); setTemplateName(''); }, 1200);
+      } catch (err) {
+        setSaveMsg({ ok: false, text: err.message });
+      }
+      setSaving(false);
+      return;
+    }
+
+    // Upload thumbnail to R2 via signed URL
+    let thumbnail_url = null;
+    if (thumbnailBlob && apiClient?.getSignedUploadUrl) {
+      try {
+        const filename = `${crypto.randomUUID()}.png`;
+        const { url, key } = await apiClient.getSignedUploadUrl('templates/thumbnails', filename, 'image/png');
+        await fetch(url, { method: 'PUT', headers: { 'Content-Type': 'image/png' }, body: thumbnailBlob });
+        thumbnail_url = key;
+      } catch (_) { /* thumbnail upload failure is non-fatal */ }
+    }
 
     const { error } = await supabase.from('cake_templates').insert({
       name: templateName.trim(),
@@ -677,91 +841,113 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
     return <div style={s.textToolbar}>{items}</div>;
   }
 
-  return (
-    <div style={s.page}>
-      <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-
-      {/* ── Top bar ── */}
-      <div style={s.topBar}>
-        <div style={{ flex: 1 }} />
-        <div style={{ position: 'relative' }} ref={settingsRef}>
-          <button style={{ ...s.topBarIconBtn, background: settingsOpen ? '#f5eaed' : 'transparent' }}
-            onClick={() => { setSettingsOpen(o => !o); setProfileOpen(false); }}>
-            <GearIcon size={16} />
-          </button>
-          {settingsOpen && (
-            <div style={{ ...s.dropdown, top: 'calc(100% + 6px)', left: 'auto', right: 0 }}>
-              <div style={s.dropdownSection}>Settings</div>
-              <button style={s.dropdownItem}
-                onClick={() => { setAddUserModal(true); setSettingsOpen(false); }}>
-                Add User
-              </button>
-            </div>
-          )}
-        </div>
+  if (!bakerReady) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: '#f4f4f5', fontFamily: "'Quicksand', sans-serif" }}>
+        <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+        <div style={{ color: '#999', fontSize: 14, fontWeight: 600, letterSpacing: 0.5 }}>Loading…</div>
       </div>
+    );
+  }
+
+  return (
+    <div style={{ ...s.page, animation: 'spattooFadeIn 0.35s ease' }}>
+      <style>{`@keyframes spattooFadeIn { from { opacity: 0 } to { opacity: 1 } }`}</style>
+      <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
 
       {/* ── Main ── */}
       <div style={s.main}>
 
-        {/* ── Sidebar ── */}
-        <div style={s.sidebar}>
-          <div style={s.sidebarLogo}>
+        {/* ── Left column: logo + sidebar ── */}
+        <div style={s.leftCol}>
+          {/* Logo sits above the dark pill */}
+          <div style={s.topLogo}>
             {bakerData?.logo_url
-              ? <img src={bakerData.logo_url} alt="" style={s.sidebarLogoImg} />
-              : <div style={s.sidebarLogoText}>{bakerData?.name ?? 'My Bakery'}</div>
+              ? <img src={bakerData.logo_url} alt="" style={s.topLogoImg} />
+              : <div style={s.topLogoText}>{bakerData?.name ?? 'My Bakery'}</div>
             }
           </div>
 
-          <div style={s.sidebarDivider} />
-
+        {/* ── Sidebar ── */}
+        <div style={s.sidebar}>
           <nav style={s.sidebarNav}>
             {[
-              { id: 'templates', label: 'Templates' },
-              { id: 'elements',  label: 'Elements'  },
-              { id: 'text',      label: 'Text'      },
-            ].map(({ id, label }) => {
+              { id: 'templates', label: 'Templates', icon: <TemplatesIcon size={20} /> },
+              { id: 'elements',  label: 'Elements',  icon: <ElementsIcon size={20} /> },
+              { id: 'text',      label: 'Text',      icon: <TextIcon size={20} /> },
+            ].map(({ id, label, icon }) => {
               const active = id === 'elements' ? elementsOpen : id === 'templates' ? templatesOpen : false;
               return (
-                <button key={id}
-                  style={{ ...s.sidebarBtn, ...(active ? { ...s.sidebarBtnActive, ...brandActive } : {}) }}
-                  onClick={() => {
-                    if (id === 'text')      { stopRotatingOnFirstEdit(); addText(); }
-                    if (id === 'elements')  openElements();
-                    if (id === 'templates') openTemplates();
-                  }}>
-                  {label}
-                </button>
+                <SidebarTooltip key={id} label={label}>
+                  <button
+                    style={{ ...s.sidebarBtn, ...(active ? s.sidebarBtnActive : {}) }}
+                    onClick={() => {
+                      if (id === 'text')      { stopRotatingOnFirstEdit(); addText(); }
+                      if (id === 'elements')  openElements();
+                      if (id === 'templates') openTemplates();
+                    }}>
+                    {icon}
+                  </button>
+                </SidebarTooltip>
               );
             })}
           </nav>
 
           <div style={{ flex: 1 }} />
 
-          <div style={{ padding: '12px 8px', position: 'relative' }} ref={profileRef}>
-            <button
-              style={{ ...s.sidebarProfileBtn, background: primaryColor }}
-              onClick={() => { setProfileOpen(o => !o); setSettingsOpen(false); }}>
-              {initials}
-            </button>
-            {profileOpen && (
-              <div style={{ ...s.dropdown, bottom: 'calc(100% + 8px)', top: 'auto', left: 8 }}>
-                <div style={s.dropdownUserInfo}>
-                  <div style={s.dropdownName}>
-                    {userData ? `${userData.firstName} ${userData.lastName}`.trim() : 'My Account'}
-                  </div>
-                  {userData?.email && <div style={s.dropdownEmail}>{userData.email}</div>}
-                </div>
-                <div style={s.dropdownDivider} />
-                <button style={s.dropdownItem}
-                  onClick={() => { supabase?.auth.signOut(); setProfileOpen(false); }}>
-                  Sign out
-                </button>
-              </div>
-            )}
-          </div>
+          <div style={s.sidebarDivider} />
 
+          <div style={{ padding: '8px 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+            <div style={{ position: 'relative' }} ref={settingsRef}>
+              <SidebarTooltip label="Settings">
+                <button
+                  style={{ ...s.sidebarBtn, ...(settingsOpen ? s.sidebarBtnActive : {}) }}
+                  onClick={() => { setSettingsOpen(o => !o); setProfileOpen(false); }}>
+                  <GearIcon size={18} />
+                </button>
+              </SidebarTooltip>
+              {settingsOpen && (
+                <div style={s.dropdown}>
+                  <div style={s.dropdownSection}>Settings</div>
+                  <button style={s.dropdownItem}
+                    onClick={() => { setAddUserModal(true); setSettingsOpen(false); }}>
+                    Add User
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <div style={{ position: 'relative' }} ref={profileRef}>
+              <SidebarTooltip label={userData ? `${userData.firstName} ${userData.lastName}`.trim() : 'Profile'}>
+                <button
+                  style={{ ...s.sidebarProfileBtn, background: primaryColor }}
+                  onClick={() => { setProfileOpen(o => !o); setSettingsOpen(false); }}>
+                  {initials}
+                </button>
+              </SidebarTooltip>
+              {profileOpen && (
+                <div style={s.dropdown}>
+                  <div style={s.dropdownUserInfo}>
+                    <div style={s.dropdownName}>
+                      {userData ? `${userData.firstName} ${userData.lastName}`.trim() : 'My Account'}
+                    </div>
+                    {userData?.email && <div style={s.dropdownEmail}>{userData.email}</div>}
+                  </div>
+                  <div style={s.dropdownDivider} />
+                  <button style={s.dropdownItem}
+                    onClick={() => { setChangePasswordModal(true); setProfileOpen(false); }}>
+                    Change Password
+                  </button>
+                  <button style={s.dropdownItem}
+                    onClick={() => { apiClient?.signOut?.() ?? supabase?.auth.signOut(); setProfileOpen(false); }}>
+                    Sign out
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
+        </div>{/* end leftCol */}
 
         {/* ── Elements flyout ── */}
         {elementsOpen && (
@@ -788,7 +974,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
                 onAddBottomPiping={i => { stopRotatingOnFirstEdit(); setPipingTarget({ tierIndex: i, zone: 'bottom' }); clearAllSelections(); setElementsOpen(false); }}
                 onRemoveTopPiping={i => { setTopPiping(i, null); if (selectedPiping?.tierIndex === i && selectedPiping?.zone === 'top') clearAllSelections(); }}
                 onRemoveBottomPiping={i => { setBottomPiping(i, null); if (selectedPiping?.tierIndex === i && selectedPiping?.zone === 'bottom') clearAllSelections(); }}
-                onSetTopper={t => { setTopper(t); setElementsOpen(false); stopRotatingOnFirstEdit(); }}
+                onSetTopper={t => { if (t?.image_url) preloadTopper(t.image_url); setTopper(t); setElementsOpen(false); stopRotatingOnFirstEdit(); }}
               />
             ))}
 
@@ -811,20 +997,22 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
             {templates.map(t => (
               <div key={t.id} style={s.templateCard}
                 onClick={async () => {
-                  let design;
-                  if (apiClient) {
-                    const full = await apiClient.fetchTemplate(t.id).catch(() => null);
-                    design = full?.design;
-                  } else {
-                    const { data } = await supabase
-                      .from('cake_templates')
-                      .select('design')
-                      .eq('id', t.id)
-                      .single();
-                    design = data?.design;
+                  let templateDesign = t.design ?? null;
+                  if (!templateDesign) {
+                    if (apiClient) {
+                      const full = await apiClient.fetchTemplate(t.id).catch(() => null);
+                      templateDesign = full?.design ?? null;
+                    } else {
+                      const { data } = await supabase
+                        .from('cake_templates')
+                        .select('design')
+                        .eq('id', t.id)
+                        .single();
+                      templateDesign = data?.design ?? null;
+                    }
                   }
-                  if (design) {
-                    loadDesign(design);
+                  if (templateDesign) {
+                    loadDesign(templateDesign);
                     setTemplatesOpen(false);
                     clearAllSelections();
                   }
@@ -991,6 +1179,19 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
 
       {/* ── Add User modal ── */}
       {addUserModal && <AddUserModal onClose={() => setAddUserModal(false)} brandBtn={brandBtn} />}
+
+      {/* ── Change Password modal ── */}
+      {changePasswordModal && (
+        <ChangePasswordModal
+          onClose={() => setChangePasswordModal(false)}
+          brandBtn={brandBtn}
+          supabase={supabase}
+          apiClient={apiClient}
+        />
+      )}
+
+      {/* Off-screen thumbnail canvas — no floor, transparent background */}
+      <CakeThumbnailCanvas config={canvasConfig} containerRef={thumbContainerRef} />
     </div>
   );
 }
@@ -999,55 +1200,66 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
 const s = {
   page: {
     display:'flex', flexDirection:'column', height:'100vh',
-    background:'#fdf0f5', fontFamily:"'Quicksand',sans-serif", overflow:'hidden',
+    background:'#f4f4f5', fontFamily:"'Quicksand',sans-serif", overflow:'hidden',
+  },
+
+  // Left column (logo above + sidebar below)
+  leftCol: {
+    display: 'flex', flexDirection: 'column', alignItems: 'center',
+    padding: '12px 0 12px 12px', gap: 10, flexShrink: 0,
+  },
+  topLogo: {
+    width: 64, display: 'flex', alignItems: 'center', justifyContent: 'center',
+    flexShrink: 0,
+  },
+  topLogoImg: { maxHeight: 36, maxWidth: 56, objectFit: 'contain' },
+  topLogoText: {
+    fontSize: 11, fontWeight: 700, color: '#444',
+    textAlign: 'center', lineHeight: 1.3, wordBreak: 'break-word',
+    fontFamily: "'Quicksand',sans-serif",
   },
 
   // Sidebar
   sidebar: {
-    width: 130, minWidth: 130, background: '#fff',
-    borderRight: '1px solid #f0dce3',
-    display: 'flex', flexDirection: 'column', flexShrink: 0,
+    width: 64, minWidth: 64,
+    background: '#18191b',
+    borderRadius: 20,
+    margin: 0,
+    display: 'flex', flexDirection: 'column',
+    alignItems: 'center',
+    padding: '12px 0',
+    flexShrink: 0,
+    flex: 1,
+    boxShadow: '0 4px 24px rgba(0,0,0,0.22)',
   },
-  sidebarLogo: {
-    height: 68, display: 'flex', alignItems: 'center', justifyContent: 'center',
-    padding: '0 14px', flexShrink: 0,
+  sidebarDivider: {
+    height: 1, width: 32,
+    background: 'rgba(255,255,255,0.10)',
+    margin: '6px 0', flexShrink: 0,
   },
-  sidebarLogoImg: { maxHeight: 40, maxWidth: 100, objectFit: 'contain' },
-  sidebarLogoText: {
-    fontSize: 12, fontWeight: 700, color: '#1a1a1a',
-    textAlign: 'center', lineHeight: 1.3, wordBreak: 'break-word',
-  },
-  sidebarDivider: { height: 1, background: '#f0dce3', flexShrink: 0 },
   sidebarNav: {
-    display: 'flex', flexDirection: 'column', padding: '10px 8px', gap: 2,
+    display: 'flex', flexDirection: 'column',
+    alignItems: 'center', padding: '4px 0', gap: 2,
   },
   sidebarBtn: {
     background: 'none', border: 'none', cursor: 'pointer',
-    padding: '9px 12px', borderRadius: 8,
-    fontSize: 12, fontWeight: 600, color: '#444',
-    fontFamily: "'Quicksand',sans-serif", textAlign: 'left',
+    width: 44, height: 44, borderRadius: 12,
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    color: 'rgba(255,255,255,0.45)',
     transition: 'background 0.15s, color 0.15s',
+    flexShrink: 0,
   },
-  sidebarBtnActive: { background: '#fdf0f5', color: '#333', fontWeight: 700 },
+  sidebarBtnActive: {
+    background: 'rgba(255,255,255,0.14)',
+    color: '#fff',
+  },
   sidebarProfileBtn: {
     width: 36, height: 36, borderRadius: '50%', border: 'none',
     cursor: 'pointer', color: '#fff',
     fontSize: 13, fontWeight: 700, letterSpacing: 0.5,
     fontFamily: "'Quicksand',sans-serif",
     display: 'flex', alignItems: 'center', justifyContent: 'center',
-  },
-
-  // Top bar (settings + profile)
-  topBar: {
-    height: 44, minHeight: 44, background: '#fff',
-    borderBottom: '1px solid #f0dce3',
-    display: 'flex', alignItems: 'center',
-    padding: '0 12px', gap: 4, flexShrink: 0,
-  },
-  topBarIconBtn: {
-    width: 34, height: 34, borderRadius: 8, border: 'none',
-    cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-    color: '#444', transition: 'background 0.15s',
+    transition: 'background 0.5s ease',
   },
 
   // Dropdowns
@@ -1077,14 +1289,16 @@ const s = {
   dropdownDivider: { height: 1, background: '#f0dce3', margin: '4px 0' },
 
   // Main + flyout panels
-  main: { flex: 1, display: 'flex', minHeight: 0 },
+  main: { flex: 1, display: 'flex', minHeight: 0, position: 'relative' },
   flyout: {
-    width: 180, background: '#fff',
-    borderRight: '1px solid #f0dce3',
+    position: 'absolute', left: 76, top: 0, bottom: 0, zIndex: 20,
+    width: 200, background: '#fff',
+    borderRadius: '0 16px 16px 0',
     display: 'flex', flexDirection: 'column',
     padding: '12px 10px', gap: 10,
     overflowY: 'auto',
-    boxShadow: '2px 0 12px rgba(107,45,66,0.08)',
+    boxShadow: '4px 0 20px rgba(0,0,0,0.10)',
+    margin: '12px 0',
   },
   flyoutHeader: {
     display: 'flex', justifyContent: 'space-between', alignItems: 'center',
@@ -1151,7 +1365,7 @@ const s = {
   // Canvas
   canvasArea: {
     flex:1, position:'relative', minHeight:0,
-    background:'linear-gradient(160deg,#fdf0f5 0%,#fce4ec 100%)',
+    background:'transparent',
   },
   loading: {
     position:'absolute', inset:0, display:'flex',
@@ -1264,7 +1478,7 @@ const s = {
     fontSize: 13, fontWeight: 700, color: '#1a1a1a', letterSpacing: 0.3,
   },
   modalInput: {
-    border: '1.5px solid #f0dce3', borderRadius: 10, padding: '9px 12px',
+    border: '1.5px solid #d1d5db', borderRadius: 10, padding: '9px 12px',
     fontSize: 13, fontFamily: "'Quicksand',sans-serif", color: '#222',
     outline: 'none', width: '100%', boxSizing: 'border-box',
   },
@@ -1276,15 +1490,16 @@ const s = {
 
   // Order
   orderBar: {
-    padding:'10px 20px 16px', background:'#fff',
-    borderTop:'1px solid #f0dce3', flexShrink:0,
+    padding:'10px 20px 16px', background:'transparent',
+    flexShrink:0,
   },
   orderBtn: {
     width:'100%', padding:'13px',
-    background:'linear-gradient(135deg,#e91e8c,#c2185b)',
+    background:'linear-gradient(135deg,#1a1a1a,#333333)',
     color:'#fff', border:'none', borderRadius:12,
     fontSize:14, fontWeight:700, cursor:'pointer', letterSpacing:0.5,
-    boxShadow:'0 4px 16px rgba(233,30,140,0.3)',
+    boxShadow:'0 4px 16px rgba(0,0,0,0.2)',
     fontFamily:"'Quicksand',sans-serif",
+    transition:'background 0.5s ease, box-shadow 0.5s ease',
   },
 };

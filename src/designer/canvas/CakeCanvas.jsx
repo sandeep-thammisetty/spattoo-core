@@ -1,4 +1,4 @@
-import { useRef, useMemo, useEffect } from 'react';
+import { useRef, useMemo, useEffect, Suspense } from 'react';
 import { Canvas, useThree } from '@react-three/fiber';
 import { OrbitControls, Text3D, Center, Html, Environment, useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
@@ -197,20 +197,44 @@ function DraggableText({ textEl, radius, selected, onSelect, onMove: onMove_prop
   );
 }
 
+export function preloadTopper(url) {
+  if (url) useGLTF.preload(url);
+}
+
 function CakeTopper({ glbPath, topY, topRadius, scaleMultiplier = 1, onClick }) {
   const { scene } = useGLTF(glbPath);
 
+  const clonedScene = useMemo(() => {
+    const clone = scene.clone(true);
+    clone.updateMatrixWorld(true);
+    // Transparency sorting causes flickering as the camera rotates.
+    // Force all fully-opaque materials to be treated as opaque so Three.js
+    // skips the sort-by-depth pass for this model.
+    clone.traverse(obj => {
+      if (!obj.isMesh) return;
+      const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+      mats.forEach(mat => {
+        mat.depthWrite = true;
+        if (mat.opacity >= 1 && !mat.alphaMap) {
+          mat.transparent = false;
+        }
+        mat.needsUpdate = true;
+      });
+    });
+    return clone;
+  }, [scene]);
+
   const { scale, yPos } = useMemo(() => {
-    const box = new THREE.Box3().setFromObject(scene);
+    const box = new THREE.Box3().setFromObject(clonedScene);
     const size = new THREE.Vector3();
     box.getSize(size);
     const sc = (topRadius * 1.8) / Math.max(size.x, size.z, 0.01);
-    return { scale: sc, yPos: topY - box.min.y * sc };
-  }, [scene, topRadius, topY]);
+    return { scale: sc, yPos: topY - box.min.y * sc * scaleMultiplier };
+  }, [clonedScene, topRadius, topY, scaleMultiplier]);
 
   return (
     <primitive
-      object={scene}
+      object={clonedScene}
       position={[0, yPos, 0]}
       scale={scale * scaleMultiplier}
       onClick={e => { e.stopPropagation(); onClick?.(); }}
@@ -313,7 +337,7 @@ function CakeScene({
 
   return (
     <>
-      <color attach="background" args={['#fdf0f5']} />
+      <color attach="background" args={['#f4f4f5']} />
       <ambientLight intensity={0.8} />
       <directionalLight position={[6, 14, 8]} intensity={1.5} castShadow />
       <directionalLight position={[-4, 4, -4]} intensity={0.4} />
@@ -360,13 +384,15 @@ function CakeScene({
       ))}
 
       {topper?.image_url && (
-        <CakeTopper
-          glbPath={topper.image_url}
-          topY={stackY}
-          topRadius={tierData[tierData.length - 1].radius}
-          scaleMultiplier={topper.scale ?? 1}
-          onClick={onTopperClick}
-        />
+        <Suspense fallback={null}>
+          <CakeTopper
+            glbPath={topper.image_url}
+            topY={stackY}
+            topRadius={tierData[tierData.length - 1].radius}
+            scaleMultiplier={topper.scale ?? 1}
+            onClick={onTopperClick}
+          />
+        </Suspense>
       )}
 
       {pipingTarget && (
@@ -431,12 +457,14 @@ function CakeThumbnailScene({ config }) {
         />
       ))}
       {topper?.image_url && (
-        <CakeTopper
-          glbPath={topper.image_url}
-          topY={stackY}
-          topRadius={tierData[tierData.length - 1].radius}
-          scaleMultiplier={topper.scale ?? 1}
-        />
+        <Suspense fallback={null}>
+          <CakeTopper
+            glbPath={topper.image_url}
+            topY={stackY}
+            topRadius={tierData[tierData.length - 1].radius}
+            scaleMultiplier={topper.scale ?? 1}
+          />
+        </Suspense>
       )}
     </>
   );
