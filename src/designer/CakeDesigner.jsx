@@ -54,7 +54,7 @@ const ZONE_LABELS = {
 
 // ── Per-element-type card in the elements panel ───────────────────────────────
 function ElementTypeCard({
-  elementType, design, toppersDb = [], scatteredDecorElements = [], selectedPiping,
+  elementType, design, toppersDb = [], scatteredDecorElements = [], picksElements = [], selectedPiping,
   onTopPipingSelect, onBottomPipingSelect,
   onAddTopPiping, onAddBottomPiping,
   onRemoveTopPiping, onRemoveBottomPiping,
@@ -196,6 +196,33 @@ function ElementTypeCard({
                 background: '#fff',
                 border: '1.5px solid #f0dce3',
               }}>
+                {el.thumbnail_url && <img src={el.thumbnail_url} alt={el.name} style={{ width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' }} />}
+              </div>
+              <span style={{ fontSize: 9, fontWeight: 700, color: '#444', textAlign: 'center', maxWidth: 68 }}>{el.name}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // ── picks — draggable GLB elements inserted into cake ─────────────────────
+  if (slug === 'picks') {
+    return (
+      <div style={{ ...s.elementCard, cursor: 'default' }}>
+        <div style={s.elementCardLabel}>{name}</div>
+        <div style={{ fontSize: 9, color: '#888', marginBottom: 8 }}>Drag onto cake to place</div>
+        {picksElements.length === 0 && (
+          <div style={{ fontSize: 9, color: '#888', fontStyle: 'italic' }}>No picks yet</div>
+        )}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+          {picksElements.map(el => (
+            <div
+              key={el.id}
+              onPointerDown={e => { e.preventDefault(); onDragStartSticker?.(el, e.clientX, e.clientY); }}
+              style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, cursor: 'grab', userSelect: 'none', touchAction: 'none' }}
+            >
+              <div style={{ width: 64, height: 64, borderRadius: 10, overflow: 'hidden', background: '#fff', border: '1.5px solid #f0dce3' }}>
                 {el.thumbnail_url && <img src={el.thumbnail_url} alt={el.name} style={{ width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' }} />}
               </div>
               <span style={{ fontSize: 9, fontWeight: 700, color: '#444', textAlign: 'center', maxWidth: 68 }}>{el.name}</span>
@@ -444,6 +471,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
   const [elementTypesLoading, setElementTypesLoading] = useState(false);
   const [toppersDb, setToppersDb] = useState([]);
   const [scatteredDecorDb, setScatteredDecorDb] = useState([]);
+  const [picksDb, setPicksDb] = useState([]);
   const [pipingStylesDb, setPipingStylesDb] = useState([]);
   const [activeElementTypeIds, setActiveElementTypeIds] = useState(new Set());
 
@@ -655,7 +683,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
     setElementsOpen(opening);
     setTemplatesOpen(false);
     // Lazy-load top-level cake_elements when panel first opens
-    if (opening && toppersDb.length === 0 && scatteredDecorDb.length === 0) {
+    if (opening && toppersDb.length === 0 && scatteredDecorDb.length === 0 && picksDb.length === 0) {
       setElementTypesLoading(true);
       let rows = [];
       if (apiClient) {
@@ -670,10 +698,12 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
         rows = topLevelData ?? [];
       }
       setActiveElementTypeIds(new Set(rows.map(r => r.element_type_id)));
-      const topperTypeId        = elementTypes.find(et => et.slug === 'topper')?.id;
+      const topperTypeId         = elementTypes.find(et => et.slug === 'topper')?.id;
       const scatteredDecorTypeId = elementTypes.find(et => et.slug === 'scattered_decor')?.id;
+      const picksTypeId          = elementTypes.find(et => et.slug === 'picks')?.id;
       setToppersDb(rows.filter(r => r.element_type_id === topperTypeId));
       setScatteredDecorDb(rows.filter(r => r.element_type_id === scatteredDecorTypeId));
+      setPicksDb(rows.filter(r => r.element_type_id === picksTypeId));
       setElementTypesLoading(false);
     }
   }
@@ -1107,6 +1137,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
                 design={design}
                 toppersDb={toppersDb}
                 scatteredDecorElements={scatteredDecorDb}
+                picksElements={picksDb}
                 selectedPiping={selectedPiping}
                 onTopPipingSelect={i => { stopRotatingOnFirstEdit(); handleTopPipingSelect(i); setColorOpen(true); }}
                 onBottomPipingSelect={i => { stopRotatingOnFirstEdit(); handleBottomPipingSelect(i); setColorOpen(true); }}
