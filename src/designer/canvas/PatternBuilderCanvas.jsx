@@ -162,8 +162,9 @@ function BuilderScene({
   radius, topY, baseY,
 }) {
   const { gl, camera } = useThree();
-  const dragId  = useRef(null);
-  const isDrag  = useRef(false);
+  const dragId   = useRef(null);
+  const isDrag   = useRef(false);
+  const orbitRef = useRef(null);
 
   const overlappingIds = useMemo(
     () => getOverlappingIds(placements, topY, radius),
@@ -178,7 +179,56 @@ function BuilderScene({
       isDrag.current = true;
       const ray = buildRay(e.clientX, e.clientY, dom, camera);
       const p   = placements.find(pl => pl.id === dragId.current);
-      if (!p || p.surface === 'gap') return; // gap balls aren't draggable
+      if (!p) return;
+
+      if (p.surface === 'gap') {
+        const nonGap = placements.filter(x => x.surface !== 'gap');
+        if (nonGap.length < 2) return;
+
+        // Find the pair of non-gap balls whose gap axis (foot point) is closest to the ray
+        let bestA = null, bestB = null, bestDist = Infinity;
+        for (let i = 0; i < nonGap.length; i++) {
+          for (let j = i + 1; j < nonGap.length; j++) {
+            const pa = nonGap[i], pb = nonGap[j];
+            const posA = placementPosition(pa, topY, radius, placements);
+            const posB = placementPosition(pb, topY, radius, placements);
+            const dA = p.r + pa.r, dB = p.r + pb.r;
+            const d  = posA.distanceTo(posB);
+            if (d < 0.0001 || d > dA + dB + 0.001) continue;
+            const tA   = (d * d + dA * dA - dB * dB) / (2 * d);
+            const ab   = posB.clone().sub(posA).normalize();
+            const foot = posA.clone().addScaledVector(ab, tA);
+            // Distance from foot to the mouse ray
+            const toFoot = foot.clone().sub(ray.origin);
+            const t      = Math.max(0, toFoot.dot(ray.direction));
+            const dist   = foot.distanceTo(ray.origin.clone().addScaledVector(ray.direction, t));
+            if (dist < bestDist) { bestDist = dist; bestA = pa; bestB = pb; }
+          }
+        }
+        if (!bestA || !bestB) return;
+
+        // Compute gapAngle for the winning pair
+        const posA = placementPosition(bestA, topY, radius, placements);
+        const posB = placementPosition(bestB, topY, radius, placements);
+        const dA   = p.r + bestA.r, dB = p.r + bestB.r;
+        const d    = posA.distanceTo(posB);
+        const tA   = (d * d + dA * dA - dB * dB) / (2 * d);
+        const ab   = posB.clone().sub(posA).normalize();
+        const foot = posA.clone().addScaledVector(ab, tA);
+        const worldUp = new THREE.Vector3(0, 1, 0);
+        let v1 = new THREE.Vector3().crossVectors(ab, worldUp);
+        if (v1.lengthSq() < 0.0001) v1.set(1, 0, 0);
+        v1.normalize();
+        const v2       = new THREE.Vector3().crossVectors(ab, v1).normalize();
+        const plane    = new THREE.Plane().setFromNormalAndCoplanarPoint(ab, foot);
+        const hitPoint = new THREE.Vector3();
+        if (!ray.intersectPlane(plane, hitPoint)) return;
+        const local     = hitPoint.clone().sub(foot);
+        const baseAngle = Math.atan2(v2.y, v1.y);
+        const newAngle  = Math.atan2(local.dot(v2), local.dot(v1)) - baseAngle;
+        onDragPlacement(dragId.current, { parentA: bestA.id, parentB: bestB.id, gapAngle: newAngle });
+        return;
+      }
 
       if (p.surface === 'top') {
         const hit = hitTop(ray, topY);
@@ -200,6 +250,7 @@ function BuilderScene({
     function onUp() {
       dragId.current = null;
       isDrag.current = false;
+      if (orbitRef.current) orbitRef.current.enabled = true;
     }
 
     dom.addEventListener('pointermove', onMove);
@@ -213,6 +264,7 @@ function BuilderScene({
   function handleSpherePointerDown(id) {
     dragId.current = id;
     isDrag.current = false;
+    if (orbitRef.current) orbitRef.current.enabled = false;
     onSelectPlacement(id);
   }
 
@@ -298,6 +350,15 @@ function BuilderScene({
           onPointerDown={handleSpherePointerDown}
         />
       ))}
+
+      <OrbitControls
+        ref={orbitRef}
+        enableZoom={false}
+        enablePan={false}
+        autoRotate={false}
+        maxPolarAngle={Math.PI / 2.05}
+        target={[0, 2, 0]}
+      />
     </>
   );
 }
@@ -328,13 +389,6 @@ export default function PatternBuilderCanvas({
         radius={DEMO_RADIUS}
         topY={DEMO_TOP_Y}
         baseY={DEMO_BASE}
-      />
-      <OrbitControls
-        enableZoom={false}
-        enablePan={false}
-        autoRotate={false}
-        maxPolarAngle={Math.PI / 2.05}
-        target={[0, 2, 0]}
       />
     </Canvas>
   );
