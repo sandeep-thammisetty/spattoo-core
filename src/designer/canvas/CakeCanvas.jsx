@@ -224,7 +224,7 @@ function StickerModel({ imageUrl, selected, color, clipY }) {
     clone.updateMatrixWorld(true);
     clone.traverse(obj => {
       if (!obj.isMesh) return;
-      obj.raycast = () => {}; // hit plane handles interaction; GLB meshes must not absorb raycasts
+      obj.raycast = () => {};
       const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
       mats.forEach(mat => { mat.depthWrite = true; mat.needsUpdate = true; });
     });
@@ -759,50 +759,92 @@ export function preloadTopper(url) {
 
 function CakeTopper({ glbPath, topY, topRadius, scaleMultiplier = 1, onClick, selected, toolbar }) {
   const { scene } = useGLTF(glbPath);
+  const groupRef = useRef(); // kept for Html anchor
 
-  const clonedScene = useMemo(() => {
+  // Bounding box is captured once right after cloning, before R3F ever
+  // mutates the object's scale/position properties. Re-running setFromObject
+  // after R3F has applied a scale prop would inflate the box and break the
+  // scale calculation on every subsequent scaleMultiplier change.
+  const { clonedScene, originalBox } = useMemo(() => {
     const clone = scene.clone(true);
     clone.updateMatrixWorld(true);
-    // Transparency sorting causes flickering as the camera rotates.
-    // Force all fully-opaque materials to be treated as opaque so Three.js
-    // skips the sort-by-depth pass for this model.
+
     clone.traverse(obj => {
-      if (!obj.isMesh) return;
-      const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
-      mats.forEach(mat => {
-        mat.depthWrite = true;
-        if (mat.opacity >= 1 && !mat.alphaMap) {
-          mat.transparent = false;
+      if (!obj.isMesh || !obj.geometry?.index) return;
+
+      const geo = obj.geometry.clone();
+      obj.geometry = geo;
+
+      const pos = geo.attributes.position;
+      const idx = geo.index.array;
+      const triCount = idx.length / 3;
+
+      const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _c = new THREE.Vector3();
+      const _e1 = new THREE.Vector3(), _e2 = new THREE.Vector3(), _e3 = new THREE.Vector3();
+
+      let totalArea = 0;
+      for (let i = 0; i < idx.length; i += 3) {
+        _a.fromBufferAttribute(pos, idx[i]);
+        _b.fromBufferAttribute(pos, idx[i + 1]);
+        _c.fromBufferAttribute(pos, idx[i + 2]);
+        _e1.subVectors(_b, _a); _e2.subVectors(_c, _a);
+        totalArea += _e1.clone().cross(_e2).length() * 0.5;
+      }
+      const avgArea = totalArea / triCount;
+      const maxArea = avgArea * 50;
+      const minArea = 1e-7;
+
+      const newIdx = [];
+      for (let i = 0; i < idx.length; i += 3) {
+        _a.fromBufferAttribute(pos, idx[i]);
+        _b.fromBufferAttribute(pos, idx[i + 1]);
+        _c.fromBufferAttribute(pos, idx[i + 2]);
+        _e1.subVectors(_b, _a);
+        _e2.subVectors(_c, _a);
+        _e3.subVectors(_c, _b);
+        const area = _e1.clone().cross(_e2).length() * 0.5;
+        const maxEdge = Math.max(_e1.length(), _e2.length(), _e3.length());
+        const minEdge = Math.min(_e1.length(), _e2.length(), _e3.length());
+        const aspectRatio = maxEdge / (minEdge + 1e-10);
+        if (area >= minArea && area <= maxArea && aspectRatio <= 150) {
+          newIdx.push(idx[i], idx[i + 1], idx[i + 2]);
         }
-        mat.needsUpdate = true;
-      });
+      }
+
+      geo.setIndex(new THREE.BufferAttribute(new Uint32Array(newIdx), 1));
+      geo.computeBoundingBox();
+      geo.computeBoundingSphere();
     });
-    return clone;
+
+    const box = new THREE.Box3().setFromObject(clone);
+    return { clonedScene: clone, originalBox: box };
   }, [scene]);
 
-  const { scale, yPos } = useMemo(() => {
-    const box = new THREE.Box3().setFromObject(clonedScene);
+  const { scale, yPos, topHeight } = useMemo(() => {
+    if (originalBox.isEmpty()) return { scale: 1, yPos: topY, topHeight: 0 };
     const size = new THREE.Vector3();
-    box.getSize(size);
-    const sc = (topRadius * 1.8) / Math.max(size.x, size.z, 0.01);
-    return { scale: sc, yPos: topY - box.min.y * sc * scaleMultiplier };
-  }, [clonedScene, topRadius, topY, scaleMultiplier]);
-
-  const topHeight = useMemo(() => {
-    const box = new THREE.Box3().setFromObject(clonedScene);
-    return (box.max.y - box.min.y) * scale * scaleMultiplier;
-  }, [clonedScene, scale, scaleMultiplier]);
+    originalBox.getSize(size);
+    const sc = (topRadius * 1.2) / Math.max(size.x, size.z, 0.01);
+    const appliedScale = sc * scaleMultiplier;
+    return {
+      scale: sc,
+      yPos: topY - originalBox.min.y * appliedScale + 0.02,
+      topHeight: size.y * appliedScale,
+    };
+  }, [originalBox, topRadius, topY, scaleMultiplier]);
 
   return (
-    <group>
+    <group ref={groupRef}>
+      <group rotation={[0, -Math.PI / 2, 0]}>
       <primitive
         object={clonedScene}
         position={[0, yPos, 0]}
         scale={scale * scaleMultiplier}
         onClick={e => { e.stopPropagation(); onClick?.(); }}
       />
+      </group>
       {selected && toolbar && (
-        <Html position={[0, yPos + topHeight + 0.25, 0]} center zIndexRange={[200, 0]}>
+        <Html position={[topRadius + 0.25, topY + 0.2, 0]} center zIndexRange={[200, 0]}>
           {toolbar}
         </Html>
       )}
@@ -882,6 +924,7 @@ function CameraCapture({ cameraRef }) {
   return null;
 }
 
+
 function CakeScene({
   config, selectedTier, onTierClick, onDeselect,
   selectedTextId, onTextSelect, onTextMove, onTextContentChange, textToolbar,
@@ -930,10 +973,10 @@ function CakeScene({
 
   return (
     <>
-      <color attach="background" args={['#f4f4f5']} />
       <ambientLight intensity={0.8} />
       <directionalLight position={[6, 14, 8]} intensity={1.5} castShadow />
       <directionalLight position={[-4, 4, -4]} intensity={0.4} />
+      <color attach="background" args={['#f4f4f5']} />
       <Environment preset="apartment" backgroundBlurriness={1} />
 
       <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow

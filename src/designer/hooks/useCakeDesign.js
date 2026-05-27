@@ -120,7 +120,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
         radialOffset:  0,
         tiltAngle:     0,
         groupId:       null,
-        color:         null,
+        color:         element.default_color ?? null,
         allowedActions: {
           resize:    element.allowed_actions?.resize    ?? true,
           duplicate: element.allowed_actions?.duplicate ?? true,

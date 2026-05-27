@@ -55,77 +55,10 @@ const ZONE_LABELS = {
 
 // ── Per-element-type card in the elements panel ───────────────────────────────
 function ElementTypeCard({
-  elementType, design, toppersDb = [], scatteredDecorElements = [], picksElements = [], otherElements = [], selectedPiping,
-  onTopPipingSelect, onBottomPipingSelect,
-  onAddTopPiping, onAddBottomPiping,
-  onRemoveTopPiping, onRemoveBottomPiping,
+  elementType, design, toppersDb = [], scatteredDecorElements = [], picksElements = [], otherElements = [],
   onSetTopper, onDragStartSticker, onDragStartTopper,
 }) {
-  const { slug, name, placement_rules: pr } = elementType;
-  const zones = pr?.zones ?? [];
-
-  // ── cream_piping — zone selector per tier ──────────────────────────────────
-  if (slug === 'cream_piping') {
-    return (
-      <div style={{ ...s.elementCard, cursor: 'default' }}>
-        <div style={s.elementCardLabel}>{name}</div>
-
-        {design.tiers.map((tier, i) => (
-          <div key={i} style={{ width: '100%', borderTop: '1px solid #f0dce3', paddingTop: 6 }}>
-            <div style={{ fontSize: 9, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 4 }}>
-              {TIER_LABELS[i]}
-            </div>
-
-            {/* top_edge zone */}
-            {zones.includes('top_edge') && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                <span style={s.tierCheckLabel}>{ZONE_LABELS.top_edge}</span>
-                <div style={{ flex: 1 }} />
-                {tier.topPiping ? (
-                  <>
-                    <div onClick={() => onTopPipingSelect(i)}
-                      style={{ width: 16, height: 16, borderRadius: '50%', flexShrink: 0, cursor: 'pointer', background: 'conic-gradient(red,yellow,lime,aqua,blue,magenta,red)', padding: 2.5, boxSizing: 'border-box' }}>
-                      <div style={{ width: '100%', height: '100%', borderRadius: '50%', background: tier.topPiping.color }} />
-                    </div>
-                    <button style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 13, color: '#e53935', fontWeight: 700 }}
-                      onClick={() => onRemoveTopPiping(i)}>×</button>
-                  </>
-                ) : (
-                  <button onClick={() => onAddTopPiping(i)}
-                    style={{ fontSize: 10, fontWeight: 700, color: '#333', background: '#fdf0f5', border: '1.5px solid #f0dce3', borderRadius: 8, padding: '2px 8px', cursor: 'pointer' }}>
-                    + Add
-                  </button>
-                )}
-              </div>
-            )}
-
-            {/* bottom_board zone */}
-            {zones.includes('bottom_board') && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
-                <span style={s.tierCheckLabel}>{ZONE_LABELS.bottom_board}</span>
-                <div style={{ flex: 1 }} />
-                {tier.bottomPiping ? (
-                  <>
-                    <div onClick={() => onBottomPipingSelect(i)}
-                      style={{ width: 16, height: 16, borderRadius: '50%', flexShrink: 0, cursor: 'pointer', background: 'conic-gradient(red,yellow,lime,aqua,blue,magenta,red)', padding: 2.5, boxSizing: 'border-box' }}>
-                      <div style={{ width: '100%', height: '100%', borderRadius: '50%', background: tier.bottomPiping.color }} />
-                    </div>
-                    <button style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 13, color: '#e53935', fontWeight: 700 }}
-                      onClick={() => onRemoveBottomPiping(i)}>×</button>
-                  </>
-                ) : (
-                  <button onClick={() => onAddBottomPiping(i)}
-                    style={{ fontSize: 10, fontWeight: 700, color: '#333', background: '#fdf0f5', border: '1.5px solid #f0dce3', borderRadius: 8, padding: '2px 8px', cursor: 'pointer' }}>
-                    + Add
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
-    );
-  }
+  const { slug, name } = elementType;
 
   // ── topper — pick from DB-driven GLB toppers ──────────────────────────────
   if (slug === 'topper') {
@@ -481,6 +414,7 @@ function AddUserModal({ onClose, brandBtn }) {
   );
 }
 
+// ── Cream piping inline section (per-tier, per-zone controls) ─────────────────
 // ── Main designer ─────────────────────────────────────────────────────────────
 export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'cake-thumbnails', onOrder, onSaveTemplate }) {
   const { design, setTierColor, setTopPiping, setBottomPiping, addText, updateText, duplicateText, removeText, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, setTopper, setTopperScale, loadDesign, canvasConfig } = useCakeDesign();
@@ -490,8 +424,11 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
   const [toppersDb, setToppersDb] = useState([]);
   const [scatteredDecorDb, setScatteredDecorDb] = useState([]);
   const [picksDb, setPicksDb] = useState([]);
-  const [pipingStylesDb, setPipingStylesDb] = useState([]);
   const [otherElementsDb, setOtherElementsDb] = useState({}); // typeId → elements[]
+  const [pipingPopupOpen,    setPipingPopupOpen]    = useState(false);
+  const [pipingPopupEl,     setPipingPopupEl]     = useState(null);
+  const [pipingPopupColor,  setPipingPopupColor]  = useState('#f5e6c8');
+  const [pipingPopupSpacing,setPipingPopupSpacing] = useState(0.155);
   const [activeElementTypeIds, setActiveElementTypeIds] = useState(new Set());
 
   // Capabilities fetched eagerly on mount so edit controls work
@@ -703,39 +640,84 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
     }
   }, []);
 
+  async function loadElementsIfNeeded() {
+    if (toppersDb.length > 0 || scatteredDecorDb.length > 0 || picksDb.length > 0 || Object.keys(otherElementsDb).length > 0) return;
+    setElementTypesLoading(true);
+    let rows = [];
+    if (apiClient) {
+      rows = await apiClient.fetchElements({ parentsOnly: true });
+    } else {
+      const { data: topLevelData } = await supabase
+        .from('cake_elements')
+        .select('id, name, image_url, thumbnail_url, allowed_zones, placement_config, sort_order, element_type_id, default_color, allowed_actions')
+        .is('parent_id', null)
+        .eq('is_active', true)
+        .order('sort_order');
+      rows = topLevelData ?? [];
+    }
+    setActiveElementTypeIds(new Set(rows.map(r => r.element_type_id)));
+    const topperTypeId         = elementTypes.find(et => et.slug === 'topper')?.id;
+    const scatteredDecorTypeId = elementTypes.find(et => et.slug === 'scattered_decor')?.id;
+    const picksTypeId          = elementTypes.find(et => et.slug === 'picks')?.id;
+    const knownTypeIds         = new Set([topperTypeId, scatteredDecorTypeId, picksTypeId].filter(Boolean));
+    setToppersDb(rows.filter(r => r.element_type_id === topperTypeId));
+    setScatteredDecorDb(rows.filter(r => r.element_type_id === scatteredDecorTypeId));
+    setPicksDb(rows.filter(r => r.element_type_id === picksTypeId));
+    const others = {};
+    rows.filter(r => !knownTypeIds.has(r.element_type_id)).forEach(r => {
+      (others[r.element_type_id] ??= []).push(r);
+    });
+    setOtherElementsDb(others);
+    setElementTypesLoading(false);
+  }
+
   async function openElements() {
     const opening = !elementsOpen;
     setElementsOpen(opening);
     setTemplatesOpen(false);
-    // Lazy-load top-level cake_elements when panel first opens
-    if (opening && toppersDb.length === 0 && scatteredDecorDb.length === 0 && picksDb.length === 0 && Object.keys(otherElementsDb).length === 0) {
-      setElementTypesLoading(true);
-      let rows = [];
-      if (apiClient) {
-        rows = await apiClient.fetchElements({ parentsOnly: true });
-      } else {
-        const { data: topLevelData } = await supabase
-          .from('cake_elements')
-          .select('id, name, image_url, thumbnail_url, allowed_zones, placement_config, sort_order, element_type_id')
-          .is('parent_id', null)
-          .eq('is_active', true)
-          .order('sort_order');
-        rows = topLevelData ?? [];
-      }
-      setActiveElementTypeIds(new Set(rows.map(r => r.element_type_id)));
-      const topperTypeId         = elementTypes.find(et => et.slug === 'topper')?.id;
-      const scatteredDecorTypeId = elementTypes.find(et => et.slug === 'scattered_decor')?.id;
-      const picksTypeId          = elementTypes.find(et => et.slug === 'picks')?.id;
-      const knownTypeIds         = new Set([topperTypeId, scatteredDecorTypeId, picksTypeId].filter(Boolean));
-      setToppersDb(rows.filter(r => r.element_type_id === topperTypeId));
-      setScatteredDecorDb(rows.filter(r => r.element_type_id === scatteredDecorTypeId));
-      setPicksDb(rows.filter(r => r.element_type_id === picksTypeId));
-      const others = {};
-      rows.filter(r => !knownTypeIds.has(r.element_type_id)).forEach(r => {
-        (others[r.element_type_id] ??= []).push(r);
-      });
-      setOtherElementsDb(others);
-      setElementTypesLoading(false);
+    if (opening) setPipingPopupOpen(false);
+    if (opening) await loadElementsIfNeeded();
+  }
+
+  async function openPipingPopup(el) {
+    // Seed color/spacing from any existing application of this style
+    let color = '#f5e6c8', spacing = 0.155;
+    for (const tier of design.tiers) {
+      if (tier.topPiping?.id === el.id)    { color = tier.topPiping.color ?? color;    spacing = tier.topPiping.spacing ?? spacing;    break; }
+      if (tier.bottomPiping?.id === el.id) { color = tier.bottomPiping.color ?? color; spacing = tier.bottomPiping.spacing ?? spacing; break; }
+    }
+    setPipingPopupEl(el);
+    setPipingPopupColor(color);
+    setPipingPopupSpacing(spacing);
+    setPipingPopupOpen(true);
+    setElementsOpen(false);
+  }
+
+  function handlePipingColorChange(c) {
+    setPipingPopupColor(c);
+    design.tiers.forEach((tier, i) => {
+      if (tier.topPiping?.id    === pipingPopupEl?.id) setTopPiping(i,    { ...tier.topPiping,    color: c });
+      if (tier.bottomPiping?.id === pipingPopupEl?.id) setBottomPiping(i, { ...tier.bottomPiping, color: c });
+    });
+  }
+
+  function handlePipingSpacingChange(v) {
+    setPipingPopupSpacing(v);
+    design.tiers.forEach((tier, i) => {
+      if (tier.topPiping?.id    === pipingPopupEl?.id) setTopPiping(i,    { ...tier.topPiping,    spacing: v });
+      if (tier.bottomPiping?.id === pipingPopupEl?.id) setBottomPiping(i, { ...tier.bottomPiping, spacing: v });
+    });
+  }
+
+  function togglePipingZone(tierIndex, zone, isOn) {
+    if (isOn) {
+      if (zone === 'rim') setTopPiping(tierIndex, null);
+      else                setBottomPiping(tierIndex, null);
+    } else {
+      const piping = { id: pipingPopupEl.id, glbUrl: pipingPopupEl.image_url, name: pipingPopupEl.name, color: pipingPopupColor, spacing: pipingPopupSpacing };
+      if (zone === 'rim') setTopPiping(tierIndex, piping);
+      else                setBottomPiping(tierIndex, piping);
+      stopRotatingOnFirstEdit();
     }
   }
 
@@ -849,7 +831,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
   function handleTopperClick() {
     if (!design.topper) return;
     stopRotatingOnFirstEdit();
-    setSelectedEl(prev => prev?.type === 'topper' ? null : { type: 'topper' });
+    setSelectedEl(prev => prev?.type === 'topper' ? prev : { type: 'topper' });
     setColorOpen(false);
   }
 
@@ -965,31 +947,14 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
     }
   }, [selectedEl?.type === 'text' ? selectedEl.id : null]);
 
-  // Lazy-load piping styles from DB the first time the picker is triggered
-  useEffect(() => {
-    if (pipingTarget && pipingStylesDb.length === 0) {
-      if (apiClient) {
-        const pipingTypeId = elementTypes.find(et => et.slug === 'cream_piping')?.id;
-        if (pipingTypeId) {
-          apiClient.fetchElements({ elementTypeId: pipingTypeId })
-            .then(data => setPipingStylesDb(data ?? []));
-        }
-      } else {
-        supabase
-          .from('cake_elements')
-          .select('id, name, image_url, sort_order')
-          .eq('element_type_id', '2f718ccd-64e1-4941-b5f9-72133f77c04c')
-          .eq('is_active', true)
-          .order('sort_order')
-          .then(({ data }) => setPipingStylesDb(data ?? []));
-      }
-    }
-  }, [pipingTarget]);
 
   function handleOrder() {
     const canvas = document.querySelector('canvas');
     onOrder({ design, imageData: canvas?.toDataURL('image/png') ?? null });
   }
+
+  const creamPipingType = elementTypes.find(et => et.slug === 'cream_piping');
+  const creamPipingEls  = otherElementsDb[creamPipingType?.id] ?? [];
 
   const tierPanelVisible = selectedEl?.type === 'tier';
   const currentColor = getCurrentColor();
@@ -1016,16 +981,6 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
           <div style={{ width: '100%', height: '100%', borderRadius: '50%', background: getCurrentColor() }} />
         </button>,
         <div key="d1" style={s.tbDivider} />
-      );
-    }
-
-    if (c.style && el.type === 'piping') {
-      items.push(
-        <button key="style" style={{ ...s.tbIconBtn, fontSize: 10, letterSpacing: 0.3 }}
-          onClick={() => { setPipingTarget({ tierIndex: el.tierIndex, zone: el.zone }); clearAllSelections(); }}>
-          Style
-        </button>,
-        <div key="d2" style={s.tbDivider} />
       );
     }
 
@@ -1264,28 +1219,52 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
               <div style={{ fontSize: 11, color: '#666', textAlign: 'center', padding: '16px 0' }}>Loading...</div>
             )}
 
-            {elementTypes.filter(et => activeElementTypeIds.has(et.id)).map(et => (
-              <ElementTypeCard
-                key={et.id}
-                elementType={et}
-                design={design}
-                toppersDb={toppersDb}
-                scatteredDecorElements={scatteredDecorDb}
-                picksElements={picksDb}
-                otherElements={otherElementsDb[et.id] ?? []}
-                selectedPiping={selectedPiping}
-                onTopPipingSelect={i => { stopRotatingOnFirstEdit(); handleTopPipingSelect(i); setColorOpen(true); }}
-                onBottomPipingSelect={i => { stopRotatingOnFirstEdit(); handleBottomPipingSelect(i); setColorOpen(true); }}
-                onAddTopPiping={i => { stopRotatingOnFirstEdit(); setPipingTarget({ tierIndex: i, zone: 'top' }); clearAllSelections(); setElementsOpen(false); }}
-                onAddBottomPiping={i => { stopRotatingOnFirstEdit(); setPipingTarget({ tierIndex: i, zone: 'bottom' }); clearAllSelections(); setElementsOpen(false); }}
-                onRemoveTopPiping={i => { setTopPiping(i, null); if (selectedPiping?.tierIndex === i && selectedPiping?.zone === 'top') clearAllSelections(); }}
-                onRemoveBottomPiping={i => { setBottomPiping(i, null); if (selectedPiping?.tierIndex === i && selectedPiping?.zone === 'bottom') clearAllSelections(); }}
-                onSetTopper={t => { if (t?.image_url) preloadTopper(t.image_url); setTopper(t); setElementsOpen(false); stopRotatingOnFirstEdit(); }}
-                onDragStartSticker={(el, x, y) => startStickerDrag(el, x, y)}
-                onDragStartTopper={(t, x, y) => startTopperDrag(t, x, y)}
-              />
-            ))}
+            {/* Cream piping — thumbnail grid, tap a style to open popup */}
+            {creamPipingType && activeElementTypeIds.has(creamPipingType.id) && (
+              <div style={{ ...s.elementCard, cursor: 'default' }}>
+                <div style={s.elementCardLabel}>Cream Piping</div>
+                {creamPipingEls.length === 0 && (
+                  <div style={{ fontSize: 9, color: '#888', fontStyle: 'italic' }}>No styles yet</div>
+                )}
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                  {creamPipingEls.map(el => {
+                    const isActive = design.tiers.some(t => t.topPiping?.id === el.id || t.bottomPiping?.id === el.id);
+                    return (
+                      <div key={el.id} onClick={() => openPipingPopup(el)}
+                        style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, cursor: 'pointer', userSelect: 'none' }}>
+                        <div style={{
+                          width: 64, height: 64, borderRadius: 10, overflow: 'hidden',
+                          background: '#fff',
+                          border: `1.5px solid ${isActive ? '#9b5f72' : '#f0dce3'}`,
+                          boxShadow: isActive ? '0 0 0 2px rgba(155,95,114,0.18)' : 'none',
+                        }}>
+                          {el.thumbnail_url && <img src={el.thumbnail_url} alt={el.name} style={{ width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' }} />}
+                        </div>
+                        <span style={{ fontSize: 9, fontWeight: 700, color: isActive ? '#9b5f72' : '#444', textAlign: 'center', maxWidth: 68 }}>{el.name}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
+            {/* All other element types */}
+            {elementTypes
+              .filter(et => et.slug !== 'cream_piping' && activeElementTypeIds.has(et.id))
+              .map(et => (
+                <ElementTypeCard
+                  key={et.id}
+                  elementType={et}
+                  design={design}
+                  toppersDb={toppersDb}
+                  scatteredDecorElements={scatteredDecorDb}
+                  picksElements={picksDb}
+                  otherElements={otherElementsDb[et.id] ?? []}
+                  onSetTopper={t => { if (t?.image_url) preloadTopper(t.image_url); setTopper(t); setElementsOpen(false); stopRotatingOnFirstEdit(); }}
+                  onDragStartSticker={(el, x, y) => startStickerDrag(el, x, y)}
+                  onDragStartTopper={(t, x, y) => startTopperDrag(t, x, y)}
+                />
+              ))}
           </div>
         )}
 
@@ -1368,7 +1347,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
               pipingTarget={pipingTarget}
               onPipingStyleSelect={handlePipingStyleSelect}
               onPipingCancel={() => setPipingTarget(null)}
-              pipingStyles={pipingStylesDb}
+              pipingStyles={[]}
               pipingToolbar={selectedPiping !== null ? buildToolbar(selectedEl) : null}
               selectedTextId={selectedTextId}
               onTextSelect={handleTextSelect}
@@ -1378,7 +1357,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
               textToolbar={selectedText ? buildToolbar(selectedEl) : null}
               onTopperClick={handleTopperClick}
               topperSelected={selectedEl?.type === 'topper'}
-              topperToolbar={selectedEl?.type === 'topper' ? buildToolbar(selectedEl) : null}
+              topperToolbar={null}
               selectedStickerIds={selectedStickerIds}
               onStickerSelect={handleStickerSelect}
               onStickerLongPress={handleStickerLongPress}
@@ -1388,6 +1367,13 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
               hitTestRef={hitTestRef}
             />
           </Suspense>
+
+          {/* ── Topper toolbar (DOM overlay so it doesn't orbit with the scene) ── */}
+          {selectedEl?.type === 'topper' && (
+            <div style={{ position: 'absolute', right: 16, top: '50%', transform: 'translateY(-50%)', zIndex: 200, pointerEvents: 'auto' }}>
+              {buildToolbar(selectedEl)}
+            </div>
+          )}
 
           {/* ── Multi-select group bar ── */}
           {(multiSelectMode || selectedStickerIds.size > 1) && (() => {
@@ -1478,6 +1464,55 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
                 );
               })()}
 
+            </div>
+          )}
+
+          {/* ── Cream Piping popup ── */}
+          {pipingPopupOpen && pipingPopupEl && (
+            <div style={s.pipingPopup}>
+              {/* Header: thumbnail + style name + close */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                <div style={{ width: 36, height: 36, borderRadius: 8, overflow: 'hidden', border: '1.5px solid #f0dce3', background: '#fff', flexShrink: 0 }}>
+                  {pipingPopupEl.thumbnail_url && <img src={pipingPopupEl.thumbnail_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
+                </div>
+                <span style={{ fontSize: 12, fontWeight: 700, color: '#1a1a1a', flex: 1, fontFamily: "'Quicksand',sans-serif" }}>{pipingPopupEl.name}</span>
+                <button style={s.iconBtn} onClick={() => setPipingPopupOpen(false)}>✕</button>
+              </div>
+
+              {/* Color + Spacing */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderTop: '1px solid #f5eaed', borderBottom: '1px solid #f5eaed' }}>
+                <input type="color" value={pipingPopupColor}
+                  onChange={e => handlePipingColorChange(e.target.value)}
+                  style={{ width: 28, height: 28, border: '1.5px solid #f0dce3', borderRadius: 6, cursor: 'pointer', padding: 2, flexShrink: 0 }} />
+                <input type="range" min={0.08} max={0.35} step={0.01}
+                  value={pipingPopupSpacing}
+                  onChange={e => handlePipingSpacingChange(parseFloat(e.target.value))}
+                  title="Spacing"
+                  style={{ flex: 1, accentColor: '#9b5f72' }} />
+              </div>
+
+              {/* Per-tier Rim / Board toggles */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, paddingTop: 2 }}>
+                {design.tiers.map((tier, i) => {
+                  const hasRim   = tier.topPiping?.id    === pipingPopupEl.id;
+                  const hasBoard = tier.bottomPiping?.id === pipingPopupEl.id;
+                  return (
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ fontSize: 10, fontWeight: 700, color: '#555', flex: 1, fontFamily: "'Quicksand',sans-serif" }}>{TIER_LABELS[i]}</span>
+                      <button
+                        onClick={() => togglePipingZone(i, 'rim', hasRim)}
+                        style={{ ...s.zoneToggle, ...(hasRim ? s.zoneToggleOn : {}) }}>
+                        Rim
+                      </button>
+                      <button
+                        onClick={() => togglePipingZone(i, 'board', hasBoard)}
+                        style={{ ...s.zoneToggle, ...(hasBoard ? s.zoneToggleOn : {}) }}>
+                        Board
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
         </div>
@@ -1900,5 +1935,32 @@ const s = {
     background:'none', border:'1.5px solid #e0d0d5', borderRadius:8,
     padding:'4px 10px', fontSize:11, cursor:'pointer',
     fontWeight:700, fontFamily:"'Quicksand',sans-serif",
+  },
+
+  zoneToggle: {
+    padding: '4px 10px', borderRadius: 8, fontSize: 10, fontWeight: 700,
+    border: '1.5px solid #e0d0d5', background: 'transparent',
+    color: '#888', cursor: 'pointer', fontFamily: "'Quicksand',sans-serif",
+    transition: 'all 0.12s',
+  },
+  zoneToggleOn: {
+    background: 'rgba(155,95,114,0.12)',
+    border: '1.5px solid #9b5f72',
+    color: '#9b5f72',
+  },
+
+  pipingPopup: {
+    position: 'absolute',
+    right: 14, top: '50%', transform: 'translateY(-50%)',
+    width: 248, maxHeight: '80vh',
+    background: 'rgba(255,255,255,0.92)',
+    backdropFilter: 'blur(18px)',
+    WebkitBackdropFilter: 'blur(18px)',
+    borderRadius: 20,
+    padding: '14px 16px 16px',
+    boxShadow: '0 4px 24px rgba(107,45,66,0.14)',
+    display: 'flex', flexDirection: 'column', gap: 10,
+    overflowY: 'auto',
+    zIndex: 20,
   },
 };

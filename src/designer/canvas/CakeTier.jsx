@@ -19,7 +19,7 @@ function extractGeo(scene) {
 }
 
 // ── Top piping ring — GLB shells instanced around the top edge ────────────────
-function TopPipingRing({ topY, radius, glbPath, color = '#ffffff', selected = false, onClick }) {
+function TopPipingRing({ topY, radius, glbPath, color = '#ffffff', spacingFactor = 0.155, selected = false, onClick }) {
   const { scene } = useGLTF(glbPath);
 
   const { geometry, shellScale } = useMemo(() => {
@@ -29,13 +29,13 @@ function TopPipingRing({ topY, radius, glbPath, color = '#ffffff', selected = fa
   }, [scene, radius]);
 
   const positions = useMemo(() => {
-    const count = Math.max(8, Math.round((2 * Math.PI * radius) / (radius * 0.35)));
+    const count = Math.max(8, Math.round((2 * Math.PI * radius) / (radius * spacingFactor)));
     const r = radius * 0.86;
     return Array.from({ length: count }, (_, i) => {
       const angle = (i / count) * Math.PI * 2;
       return { pos: [Math.cos(angle) * r, topY, Math.sin(angle) * r], rotY: angle };
     });
-  }, [radius, topY]);
+  }, [radius, topY, spacingFactor]);
 
   if (!geometry) return null;
 
@@ -56,7 +56,7 @@ function TopPipingRing({ topY, radius, glbPath, color = '#ffffff', selected = fa
 }
 
 // ── Bottom piping ring — GLB shells at board level ────────────────────────────
-function BottomPipingRing({ yBase, radius, glbPath, color = '#f5e6c8', selected = false, onClick }) {
+function BottomPipingRing({ yBase, radius, glbPath, color = '#f5e6c8', spacingFactor = 0.155, selected = false, onClick }) {
   const { scene } = useGLTF(glbPath);
 
   const { geometry, shellScale } = useMemo(() => {
@@ -66,14 +66,14 @@ function BottomPipingRing({ yBase, radius, glbPath, color = '#f5e6c8', selected 
   }, [scene, radius]);
 
   const positions = useMemo(() => {
-    const spacing = radius * 0.155;
-    const count = Math.max(6, Math.round((2 * Math.PI * radius) / spacing));
+    const step = radius * spacingFactor;
+    const count = Math.max(6, Math.round((2 * Math.PI * radius) / step));
     const r = radius + radius * 0.06;
     return Array.from({ length: count }, (_, i) => {
       const angle = (i / count) * Math.PI * 2;
       return { pos: [Math.cos(angle) * r, yBase, Math.sin(angle) * r], rotY: angle };
     });
-  }, [radius, yBase]);
+  }, [radius, yBase, spacingFactor]);
 
   if (!geometry) return null;
 
@@ -232,10 +232,12 @@ export default function CakeTier({
         </mesh>
         {topPiping && (
           <TopPipingRing topY={topY} radius={radius} glbPath={topPiping.glbUrl} color={topPiping.color}
+            spacingFactor={topPiping.spacing ?? 0.155}
             selected={topPipingSelected} onClick={e => { e.stopPropagation(); onTopPipingClick?.(e); }} />
         )}
         {bottomPiping && (
           <BottomPipingRing yBase={yBase} radius={radius} glbPath={bottomPiping.glbUrl} color={bottomPiping.color}
+            spacingFactor={bottomPiping.spacing ?? 0.155}
             selected={bottomPipingSelected} onClick={e => { e.stopPropagation(); onBottomPipingClick?.(e); }} />
         )}
       </group>

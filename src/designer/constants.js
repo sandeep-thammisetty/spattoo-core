@@ -26,6 +26,12 @@ export const SELECTION_COLOR  = '#6c47ff';   // emissive highlight on selected e
 export const CAMERA_POSITION  = [4.5, 5.5, 6.5];
 export const CAMERA_FOV       = 42;
 
+// ── Top cap ───────────────────────────────────────────────────────────────────
+// CakeTier renders a thin cap disc (height 0.02) on top of each tier so the
+// top face has a slightly smoother sheen. Balls placed on the top surface must
+// sit above this cap to avoid geometric clipping.
+export const CAKE_TOP_CAP_H = 0.02;
+
 // ── Sticker surface offsets ───────────────────────────────────────────────────
 export const SIDE_STICKER_SURFACE_OFFSET = 0.025;  // gap between cake wall and sticker face
 export const FLAT_STICKER_Y_OFFSET       = 0.025;  // lift above cake top surface
