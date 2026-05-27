@@ -428,7 +428,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
   const [pipingPopupOpen,    setPipingPopupOpen]    = useState(false);
   const [pipingPopupEl,     setPipingPopupEl]     = useState(null);
   const [pipingPopupColor,  setPipingPopupColor]  = useState('#f5e6c8');
-  const [pipingPopupSpacing,setPipingPopupSpacing] = useState(0.155);
+  const [pipingPopupSize,   setPipingPopupSize]    = useState(1.0);
   const [activeElementTypeIds, setActiveElementTypeIds] = useState(new Set());
 
   // Capabilities fetched eagerly on mount so edit controls work
@@ -680,15 +680,15 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
   }
 
   async function openPipingPopup(el) {
-    // Seed color/spacing from any existing application of this style
-    let color = '#f5e6c8', spacing = 0.155;
+    // Seed color/size from any existing application of this style
+    let color = '#f5e6c8', size = 1.0;
     for (const tier of design.tiers) {
-      if (tier.topPiping?.id === el.id)    { color = tier.topPiping.color ?? color;    spacing = tier.topPiping.spacing ?? spacing;    break; }
-      if (tier.bottomPiping?.id === el.id) { color = tier.bottomPiping.color ?? color; spacing = tier.bottomPiping.spacing ?? spacing; break; }
+      if (tier.topPiping?.id === el.id)    { color = tier.topPiping.color ?? color;    size = tier.topPiping.size ?? size;    break; }
+      if (tier.bottomPiping?.id === el.id) { color = tier.bottomPiping.color ?? color; size = tier.bottomPiping.size ?? size; break; }
     }
     setPipingPopupEl(el);
     setPipingPopupColor(color);
-    setPipingPopupSpacing(spacing);
+    setPipingPopupSize(size);
     setPipingPopupOpen(true);
     setElementsOpen(false);
   }
@@ -701,11 +701,11 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
     });
   }
 
-  function handlePipingSpacingChange(v) {
-    setPipingPopupSpacing(v);
+  function handlePipingSizeChange(v) {
+    setPipingPopupSize(v);
     design.tiers.forEach((tier, i) => {
-      if (tier.topPiping?.id    === pipingPopupEl?.id) setTopPiping(i,    { ...tier.topPiping,    spacing: v });
-      if (tier.bottomPiping?.id === pipingPopupEl?.id) setBottomPiping(i, { ...tier.bottomPiping, spacing: v });
+      if (tier.topPiping?.id    === pipingPopupEl?.id) setTopPiping(i,    { ...tier.topPiping,    size: v });
+      if (tier.bottomPiping?.id === pipingPopupEl?.id) setBottomPiping(i, { ...tier.bottomPiping, size: v });
     });
   }
 
@@ -714,7 +714,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
       if (zone === 'rim') setTopPiping(tierIndex, null);
       else                setBottomPiping(tierIndex, null);
     } else {
-      const piping = { id: pipingPopupEl.id, glbUrl: pipingPopupEl.image_url, name: pipingPopupEl.name, color: pipingPopupColor, spacing: pipingPopupSpacing };
+      const piping = { id: pipingPopupEl.id, glbUrl: pipingPopupEl.image_url, name: pipingPopupEl.name, color: pipingPopupColor, size: pipingPopupSize };
       if (zone === 'rim') setTopPiping(tierIndex, piping);
       else                setBottomPiping(tierIndex, piping);
       stopRotatingOnFirstEdit();
@@ -1484,10 +1484,10 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
                 <input type="color" value={pipingPopupColor}
                   onChange={e => handlePipingColorChange(e.target.value)}
                   style={{ width: 28, height: 28, border: '1.5px solid #f0dce3', borderRadius: 6, cursor: 'pointer', padding: 2, flexShrink: 0 }} />
-                <input type="range" min={0.08} max={0.35} step={0.01}
-                  value={pipingPopupSpacing}
-                  onChange={e => handlePipingSpacingChange(parseFloat(e.target.value))}
-                  title="Spacing"
+                <input type="range" min={0.5} max={2.0} step={0.05}
+                  value={pipingPopupSize}
+                  onChange={e => handlePipingSizeChange(parseFloat(e.target.value))}
+                  title="Size"
                   style={{ flex: 1, accentColor: '#9b5f72' }} />
               </div>
 
