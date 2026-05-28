@@ -3,6 +3,10 @@ import { HexColorPicker } from 'react-colorful';
 import CakeCanvas, { CakeThumbnailCanvas, preloadTopper } from './canvas/CakeCanvas';
 import { useCakeDesign } from './hooks/useCakeDesign';
 import ColorGuide from './ColorGuide';
+import OrderModal from './OrderModal';
+import OrdersPanel from './OrdersPanel';
+import CustomersPanel from './CustomersPanel';
+import DashboardPanel from './DashboardPanel';
 
 // Tier caps are hardcoded — tiers are not element_types rows, they're the cake structure itself
 const TIER_CAPS   = { color: true, resize: false, style: false, fontSize: false, duplicate: false, delete: false };
@@ -250,6 +254,38 @@ function TextIcon({ size = 20 }) {
   );
 }
 
+function DashboardIcon({ size = 20 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="3" width="7" height="7" rx="1" />
+      <rect x="14" y="3" width="7" height="7" rx="1" />
+      <rect x="3" y="14" width="7" height="7" rx="1" />
+      <rect x="14" y="14" width="7" height="7" rx="1" />
+    </svg>
+  );
+}
+
+function OrdersIcon({ size = 20 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="5" y="2" width="14" height="20" rx="2" />
+      <line x1="9" y1="7" x2="15" y2="7" />
+      <line x1="9" y1="11" x2="15" y2="11" />
+      <line x1="9" y1="15" x2="12" y2="15" />
+    </svg>
+  );
+}
+
+function CustomersIcon({ size = 20 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="9" cy="7" r="4" />
+      <path d="M2 21v-2a7 7 0 0 1 14 0v2" />
+      <path d="M19 8v6M22 11h-6" />
+    </svg>
+  );
+}
+
 // ── Sidebar tooltip ───────────────────────────────────────────────────────────
 function SidebarTooltip({ label, children }) {
   const [visible, setVisible] = useState(false);
@@ -484,6 +520,13 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
   const [addUserModal,        setAddUserModal]        = useState(false);
   const [changePasswordModal, setChangePasswordModal] = useState(false);
   const [colorGuideOpen,      setColorGuideOpen]      = useState(false);
+  const [orderModalOpen,      setOrderModalOpen]      = useState(false);
+  const [editingOrder,        setEditingOrder]        = useState(null);
+  const [ordersPanelOpen,     setOrdersPanelOpen]     = useState(false);
+  const [customersPanelOpen,  setCustomersPanelOpen]  = useState(false);
+  const [customersFilter,     setCustomersFilter]     = useState(null);
+  const [dashboardOpen,       setDashboardOpen]       = useState(false);
+  const [ordersFilter,        setOrdersFilter]        = useState(null);
   const [bakerReady,          setBakerReady]          = useState(false);
   const [bakerData,    setBakerData]    = useState(null);
   const [userData,     setUserData]     = useState(null);
@@ -949,8 +992,39 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
 
 
   function handleOrder() {
-    const canvas = document.querySelector('canvas');
-    onOrder({ design, imageData: canvas?.toDataURL('image/png') ?? null });
+    setOrderModalOpen(true);
+  }
+
+  async function handleOrderSubmit(formData) {
+    const thumbCanvas = thumbContainerRef.current?.querySelector('canvas');
+    const designThumbnail = thumbCanvas ? thumbCanvas.toDataURL('image/png') : null;
+
+    const designSnapshot = {
+      shape: 'round',
+      tiers: design.tiers.map(t => ({
+        color:        t.color,
+        topPiping:    t.topPiping    ?? null,
+        bottomPiping: t.bottomPiping ?? null,
+        decorations:  [],
+        texts:        [],
+        ...(t.radius != null && { radius: t.radius }),
+        ...(t.height != null && { height: t.height }),
+      })),
+      texts:    design.texts,
+      stickers: design.stickers,
+      topper:   design.topper ?? null,
+    };
+
+    if (editingOrder) {
+      const payload = { designSnapshot, designThumbnail, comment: formData.comment };
+      if (apiClient?.updateOrderDesign) return await apiClient.updateOrderDesign(editingOrder.id, payload);
+      if (onOrder)                       return await onOrder({ ...payload, mode: 'update_design', orderId: editingOrder.id });
+      return;
+    }
+
+    const payload = { ...formData, designSnapshot, designThumbnail };
+    if (apiClient?.placeOrder) return await apiClient.placeOrder(payload);
+    if (onOrder)               return await onOrder(payload);
   }
 
   const creamPipingType = elementTypes.find(et => et.slug === 'cream_piping');
@@ -1126,9 +1200,12 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
         <div style={s.sidebar}>
           <nav style={s.sidebarNav}>
             {[
-              { id: 'templates', label: 'Templates', icon: <TemplatesIcon size={20} /> },
-              { id: 'elements',  label: 'Elements',  icon: <ElementsIcon size={20} /> },
-              { id: 'text',      label: 'Text',      icon: <TextIcon size={20} /> },
+              { id: 'dashboard',  label: 'Dashboard', icon: <DashboardIcon size={20} /> },
+              { id: 'templates',  label: 'Templates', icon: <TemplatesIcon size={20} /> },
+              { id: 'elements',   label: 'Elements',  icon: <ElementsIcon size={20} /> },
+              { id: 'text',       label: 'Text',      icon: <TextIcon size={20} /> },
+              { id: 'orders',     label: 'Orders',    icon: <OrdersIcon size={20} /> },
+              { id: 'customers',  label: 'Customers', icon: <CustomersIcon size={20} /> },
             ].map(({ id, label, icon }) => {
               const active = id === 'elements' ? elementsOpen : id === 'templates' ? templatesOpen : false;
               return (
@@ -1139,6 +1216,9 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
                       if (id === 'text')      { stopRotatingOnFirstEdit(); addText(); }
                       if (id === 'elements')  openElements();
                       if (id === 'templates') openTemplates();
+                      if (id === 'dashboard') setDashboardOpen(true);
+                      if (id === 'orders')    setOrdersPanelOpen(true);
+                      if (id === 'customers') setCustomersPanelOpen(true);
                     }}>
                     {icon}
                   </button>
@@ -1521,7 +1601,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
       {/* ── Order button ── */}
       {selectedEl?.type !== 'text' && (
         <div style={s.orderBar}>
-          <button style={{ ...s.orderBtn, ...brandBtn }} onClick={handleOrder}>Order This Cake</button>
+          <button style={{ ...s.orderBtn, ...brandBtn }} onClick={handleOrder}>{editingOrder ? 'Update Design' : 'Order This Cake'}</button>
         </div>
       )}
 
@@ -1586,6 +1666,69 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
           brandBtn={brandBtn}
           supabase={supabase}
           apiClient={apiClient}
+        />
+      )}
+
+      {/* ── Orders panel ── */}
+      <OrdersPanel
+        open={ordersPanelOpen}
+        onClose={() => { setOrdersPanelOpen(false); setOrdersFilter(null); }}
+        onBack={ordersFilter ? () => { setOrdersPanelOpen(false); setOrdersFilter(null); setDashboardOpen(true); } : null}
+        externalFilter={ordersFilter}
+        onEditDesign={(order) => {
+          setEditingOrder(order);
+          setOrdersPanelOpen(false);
+          if (order.design_snapshot) {
+            try { loadDesign(order.design_snapshot); } catch (e) { console.error('loadDesign failed', e); }
+          }
+        }}
+        apiClient={apiClient}
+        primaryColor={primaryColor}
+      />
+
+      {/* ── Dashboard panel ── */}
+      <DashboardPanel
+        open={dashboardOpen}
+        onClose={() => setDashboardOpen(false)}
+        apiClient={apiClient}
+        primaryColor={primaryColor}
+        accentColor={accentColor}
+        onNavigateOrders={(filter) => {
+          setOrdersFilter(filter);
+          setDashboardOpen(false);
+          setOrdersPanelOpen(true);
+        }}
+        onNavigateCustomers={(filter) => {
+          setCustomersFilter(filter);
+          setDashboardOpen(false);
+          setCustomersPanelOpen(true);
+        }}
+
+      />
+
+      {/* ── Customers panel ── */}
+      <CustomersPanel
+        open={customersPanelOpen}
+        onClose={() => { setCustomersPanelOpen(false); setCustomersFilter(null); }}
+        onBack={customersFilter ? () => { setCustomersPanelOpen(false); setCustomersFilter(null); setDashboardOpen(true); } : null}
+        apiClient={apiClient}
+        primaryColor={primaryColor}
+        externalFilter={customersFilter}
+      />
+
+      {/* ── Order modal ── */}
+      {orderModalOpen && (
+        <OrderModal
+          tierCount={design.tiers.length}
+          onClose={() => { setOrderModalOpen(false); setEditingOrder(null); }}
+          onSubmit={handleOrderSubmit}
+          editingOrder={editingOrder}
+          apiClient={apiClient}
+          supabase={supabase}
+          bakerId={bakerData?.id}
+          bakerSlug={bakerData?.slug}
+          brandBtn={brandBtn}
+          primaryColor={primaryColor}
         />
       )}
 

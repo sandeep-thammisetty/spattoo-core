@@ -21,7 +21,10 @@ function createApiClient(supabaseClient) {
         ...(options.headers ?? {}),
       },
     });
-    if (!res.ok) throw new Error(`API error ${res.status}: ${path}`);
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error ?? `API error ${res.status}: ${path}`);
+    }
     return res.json();
   }
 
@@ -42,6 +45,48 @@ function createApiClient(supabaseClient) {
         method: 'POST',
         body: JSON.stringify({ folder, filename, contentType }),
       }),
+    fetchDashboard: () => authFetch('/api/baker/dashboard'),
+    fetchDashboardBreakdown: (period) => authFetch(`/api/baker/dashboard/breakdown?period=${period}`),
+    fetchOrders: (params = {}) => {
+      const qs = new URLSearchParams(params).toString();
+      return authFetch(`/api/orders${qs ? `?${qs}` : ''}`);
+    },
+    updateOrderStatus: (orderId, status, comment) =>
+      authFetch(`/api/orders/${orderId}/status`, { method: 'PATCH', body: JSON.stringify({ status, comment }) }),
+    editOrder: (orderId, fields) =>
+      authFetch(`/api/orders/${orderId}`, { method: 'PATCH', body: JSON.stringify(fields) }),
+    updateOrderDesign: (orderId, payload) =>
+      authFetch(`/api/orders/${orderId}/design`, { method: 'PATCH', body: JSON.stringify(payload) }),
+    fetchOrderAudit: (orderId) =>
+      authFetch(`/api/orders/${orderId}/audit`),
+    fetchCustomers: ({ includeInactive = false, from } = {}) => {
+      const p = new URLSearchParams();
+      if (includeInactive) p.set('include_inactive', 'true');
+      if (from)            p.set('from', from);
+      const qs = p.toString();
+      return authFetch(`/api/baker/customers${qs ? `?${qs}` : ''}`);
+    },
+    createCustomer: (form) =>
+      authFetch('/api/baker/customers', { method: 'POST', body: JSON.stringify(form) }),
+    updateCustomer: (id, form) =>
+      authFetch(`/api/baker/customers/${id}`, { method: 'PATCH', body: JSON.stringify(form) }),
+    deactivateCustomer: (id) =>
+      authFetch(`/api/baker/customers/${id}/deactivate`, { method: 'PATCH' }),
+    reactivateCustomer: (id) =>
+      authFetch(`/api/baker/customers/${id}/reactivate`, { method: 'PATCH' }),
+    fetchFlavours: (bakerSlug) =>
+      fetch(`${API_URL}/api/flavours?bakerSlug=${bakerSlug}`).then(r => r.json()),
+    placeOrder: async (payload) => {
+      const profile = await authFetch('/api/baker/profile');
+      const r = await fetch(`${API_URL}/api/orders`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...payload, bakerSlug: profile.baker.slug }),
+      });
+      const json = await r.json();
+      if (!r.ok) throw new Error(json.error ?? `Order failed (${r.status})`);
+      return json;
+    },
     signOut: () => supabaseClient.auth.signOut(),
     changePassword: (newPassword) => supabaseClient.auth.updateUser({ password: newPassword }),
   };
