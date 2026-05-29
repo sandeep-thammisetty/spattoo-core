@@ -7,6 +7,8 @@ import OrderModal from './OrderModal';
 import OrdersPanel from './OrdersPanel';
 import CustomersPanel from './CustomersPanel';
 import DashboardPanel from './DashboardPanel';
+import SettingsPanel from './SettingsPanel';
+import BillingPanel from './BillingPanel';
 
 // Tier caps are hardcoded — tiers are not element_types rows, they're the cake structure itself
 const TIER_CAPS   = { color: true, resize: false, style: false, fontSize: false, duplicate: false, delete: false };
@@ -526,10 +528,13 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
   const [customersPanelOpen,  setCustomersPanelOpen]  = useState(false);
   const [customersFilter,     setCustomersFilter]     = useState(null);
   const [dashboardOpen,       setDashboardOpen]       = useState(false);
+  const [settingsPanelOpen,   setSettingsPanelOpen]   = useState(false);
+  const [billingPanelOpen,    setBillingPanelOpen]    = useState(false);
   const [ordersFilter,        setOrdersFilter]        = useState(null);
   const [bakerReady,          setBakerReady]          = useState(false);
   const [bakerData,    setBakerData]    = useState(null);
   const [userData,     setUserData]     = useState(null);
+  const [bakerSettings, setBakerSettings] = useState({});
   const settingsRef      = useRef(null);
   const profileRef       = useRef(null);
   const hitTestRef       = useRef(null);
@@ -549,6 +554,12 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
   const initials = userData
     ? `${(userData.firstName || '')[0] || ''}${(userData.lastName || '')[0] || ''}`.toUpperCase() || '?'
     : '?';
+
+  useEffect(() => {
+    if (apiClient?.fetchBakerSettings) {
+      apiClient.fetchBakerSettings().then(s => setBakerSettings(s ?? {})).catch(() => {});
+    }
+  }, [apiClient]);
 
   useEffect(() => {
     if (apiClient?.fetchBakerProfile) {
@@ -1178,6 +1189,43 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
     );
   }
 
+  // Block access if subscription is expired or cancelled
+  const blockedStatuses = ['expired', 'cancelled', 'paused'];
+  if (bakerData && blockedStatuses.includes(bakerData.subscription_status)) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: '#F4F8F5', fontFamily: "'Quicksand', sans-serif" }}>
+        <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+        <div style={{ textAlign: 'center', maxWidth: 400, padding: '0 24px' }}>
+          <div style={{ fontSize: 48, marginBottom: 16 }}>🔒</div>
+          <div style={{ fontSize: 22, fontWeight: 800, color: '#1a1a1a', marginBottom: 8 }}>
+            {bakerData.subscription_status === 'expired' ? 'Your trial has ended' : 'Subscription inactive'}
+          </div>
+          <div style={{ fontSize: 14, color: '#6B7280', lineHeight: 1.6, marginBottom: 28 }}>
+            Choose a plan to continue using Spattoo. Start free with Spark or unlock more with a paid plan.
+          </div>
+          <button
+            onClick={() => setBillingPanelOpen(true)}
+            style={{
+              padding: '14px 32px', borderRadius: 14, border: 'none', cursor: 'pointer',
+              background: `linear-gradient(135deg, ${primaryColor}, ${accentColor})`,
+              color: '#fff', fontSize: 15, fontWeight: 800, fontFamily: 'inherit',
+              boxShadow: '0 6px 20px rgba(0,0,0,0.15)',
+            }}
+          >
+            View Plans
+          </button>
+          <BillingPanel
+            open={billingPanelOpen}
+            onClose={() => setBillingPanelOpen(false)}
+            apiClient={apiClient}
+            primaryColor={primaryColor}
+            accentColor={accentColor}
+          />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={{ ...s.page, animation: 'spattooFadeIn 0.35s ease' }}>
       <style>{`@keyframes spattooFadeIn { from { opacity: 0 } to { opacity: 1 } }`}</style>
@@ -1243,6 +1291,14 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
               {settingsOpen && (
                 <div style={s.dropdown}>
                   <div style={s.dropdownSection}>Settings</div>
+                  <button style={s.dropdownItem}
+                    onClick={() => { setSettingsPanelOpen(true); setSettingsOpen(false); }}>
+                    Store Settings
+                  </button>
+                  <button style={s.dropdownItem}
+                    onClick={() => { setBillingPanelOpen(true); setSettingsOpen(false); }}>
+                    Billing
+                  </button>
                   <button style={s.dropdownItem}
                     onClick={() => { setColorGuideOpen(true); setSettingsOpen(false); }}>
                     Color Guide
@@ -1411,9 +1467,6 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
               Save Template
             </button>
           </div>
-          {!selectedEl && selectedStickerIds.size === 0 && (
-            <div style={s.hint}>Tap a tier or text to edit</div>
-          )}
 
           <Suspense fallback={<div style={s.loading}>Loading 3D cake...</div>}>
             <CakeCanvas
@@ -1669,6 +1722,27 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
         />
       )}
 
+      {/* ── Billing panel ── */}
+      <BillingPanel
+        open={billingPanelOpen}
+        onClose={() => setBillingPanelOpen(false)}
+        apiClient={apiClient}
+        primaryColor={primaryColor}
+        accentColor={accentColor}
+      />
+
+      {/* ── Settings panel ── */}
+      <SettingsPanel
+        open={settingsPanelOpen}
+        onClose={() => setSettingsPanelOpen(false)}
+        apiClient={apiClient}
+        primaryColor={primaryColor}
+        accentColor={accentColor}
+        onBrandingUpdate={({ primary_color, accent_color, logo_url }) => {
+          setBakerData(b => ({ ...b, primary_color, accent_color, logo_url }));
+        }}
+      />
+
       {/* ── Orders panel ── */}
       <OrdersPanel
         open={ordersPanelOpen}
@@ -1684,6 +1758,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
         }}
         apiClient={apiClient}
         primaryColor={primaryColor}
+        homeDeliveryEnabled={!!bakerSettings?.delivery?.home_delivery}
       />
 
       {/* ── Dashboard panel ── */}
@@ -1727,6 +1802,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
           supabase={supabase}
           bakerId={bakerData?.id}
           bakerSlug={bakerData?.slug}
+          homeDeliveryEnabled={!!bakerSettings?.delivery?.home_delivery}
           brandBtn={brandBtn}
           primaryColor={primaryColor}
         />

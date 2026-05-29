@@ -47,12 +47,12 @@ function InfoRow({ label, value }) {
 
 // ── Edit form ─────────────────────────────────────────────────────────────────
 
-function EditForm({ order, onSave, onCancel, saving, serverError }) {
+function EditForm({ order, onSave, onCancel, saving, serverError, homeDeliveryEnabled = false }) {
   const [form, setForm] = useState({
     weight_kg:            order.weight_kg ?? '',
     delivery_date:        order.delivery_date ?? '',
     delivery_time:        order.delivery_time ?? '',
-    delivery_mode:        order.delivery_mode ?? 'pickup',
+    delivery_mode:        (!homeDeliveryEnabled && order.delivery_mode === 'home_delivery') ? 'pickup' : (order.delivery_mode ?? 'pickup'),
     delivery_address:     order.delivery_address ?? '',
     special_instructions: order.special_instructions ?? '',
     comment:              '',
@@ -95,15 +95,20 @@ function EditForm({ order, onSave, onCancel, saving, serverError }) {
 
       <Field label="Delivery mode">
         <div style={{ display: 'flex', gap: 8 }}>
-          {[['pickup', 'Pickup'], ['home_delivery', 'Home Delivery']].map(([val, label]) => (
-            <button key={val} onClick={() => set('delivery_mode', val)} style={{
-              flex: 1, padding: '9px', borderRadius: 10, cursor: 'pointer',
-              fontFamily: 'inherit', fontSize: 13, fontWeight: 700,
-              border: `1.5px solid ${form.delivery_mode === val ? '#555' : '#E0DDD8'}`,
-              background: form.delivery_mode === val ? '#1a1a1a' : '#fff',
-              color: form.delivery_mode === val ? '#fff' : '#888',
-            }}>{label}</button>
-          ))}
+          {[['pickup', 'Pickup'], ['home_delivery', 'Home Delivery']].map(([val, label]) => {
+            const disabled = val === 'home_delivery' && !homeDeliveryEnabled;
+            if (disabled) return null;
+            const active = form.delivery_mode === val;
+            return (
+              <button key={val} onClick={() => set('delivery_mode', val)} style={{
+                flex: 1, padding: '9px', borderRadius: 10, cursor: 'pointer',
+                fontFamily: 'inherit', fontSize: 13, fontWeight: 700,
+                border: `1.5px solid ${active ? '#555' : '#E0DDD8'}`,
+                background: active ? '#1a1a1a' : '#fff',
+                color: active ? '#fff' : '#888',
+              }}>{label}</button>
+            );
+          })}
         </div>
       </Field>
 
@@ -254,7 +259,7 @@ function AuditTrail({ orderId, apiClient, refresh }) {
 
 // ── Detail pane ───────────────────────────────────────────────────────────────
 
-function OrderDetail({ order, onEditDesign, onStatusChange, onOrderEdited, apiClient, primaryColor, isMobile }) {
+function OrderDetail({ order, onEditDesign, onStatusChange, onOrderEdited, apiClient, primaryColor, isMobile, homeDeliveryEnabled = false }) {
   const [changingStatus, setChangingStatus] = useState(false);
   const [editing, setEditing]               = useState(false);
   const [saving, setSaving]                 = useState(false);
@@ -328,7 +333,7 @@ function OrderDetail({ order, onEditDesign, onStatusChange, onOrderEdited, apiCl
         </div>
         <div style={{ marginBottom: 20 }}>{editBtn}</div>
         {editing
-          ? <EditForm order={order} onSave={handleSaveEdit} onCancel={() => { setEditing(false); setSaveError(null); }} saving={saving} serverError={saveError} />
+          ? <EditForm order={order} onSave={handleSaveEdit} onCancel={() => { setEditing(false); setSaveError(null); }} saving={saving} serverError={saveError} homeDeliveryEnabled={homeDeliveryEnabled} />
           : <>
               <button onClick={() => setEditing(true)} style={{
                 marginBottom: 16, padding: '11px 16px', borderRadius: 10,
@@ -380,7 +385,7 @@ function OrderDetail({ order, onEditDesign, onStatusChange, onOrderEdited, apiCl
       {/* Right: details */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '28px' }}>
         {editing
-          ? <EditForm order={order} onSave={handleSaveEdit} onCancel={() => { setEditing(false); setSaveError(null); }} saving={saving} serverError={saveError} />
+          ? <EditForm order={order} onSave={handleSaveEdit} onCancel={() => { setEditing(false); setSaveError(null); }} saving={saving} serverError={saveError} homeDeliveryEnabled={homeDeliveryEnabled} />
           : <>
               <button onClick={() => setEditing(true)} style={{
                 marginBottom: 20, padding: '9px 16px', borderRadius: 10,
@@ -532,7 +537,7 @@ function OrderList({ orders, loading, error, filter, onFilter, onSelect, selecte
 
 // ── Root ──────────────────────────────────────────────────────────────────────
 
-export default function OrdersPanel({ open, onClose, onBack, onEditDesign, apiClient, primaryColor = '#1a1a1a', externalFilter = null }) {
+export default function OrdersPanel({ open, onClose, onBack, onEditDesign, apiClient, primaryColor = '#1a1a1a', externalFilter = null, homeDeliveryEnabled = false }) {
   const isMobile = useIsMobile();
   const [orders, setOrders]     = useState([]);
   const [loading, setLoading]   = useState(false);
@@ -660,6 +665,7 @@ export default function OrdersPanel({ open, onClose, onBack, onEditDesign, apiCl
                     apiClient={apiClient}
                     primaryColor={primaryColor}
                     isMobile={isMobile}
+                    homeDeliveryEnabled={homeDeliveryEnabled}
                   />
                 : <Empty>Select an order to view details.</Empty>
               }

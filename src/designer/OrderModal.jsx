@@ -161,6 +161,7 @@ function UpdateDesignForm({ isMobile, primaryColor, submitting, submitError, onS
 export default function OrderModal({
   tierCount, onClose, onSubmit,
   apiClient, supabase, bakerId, bakerSlug,
+  homeDeliveryEnabled = false,
   brandBtn, primaryColor = '#1a1a1a',
   editingOrder = null,
 }) {
@@ -634,15 +635,28 @@ export default function OrderModal({
                   <div style={{ display:'flex', gap:10, marginTop:2 }}>
                     {[['pickup','Pickup'],['home_delivery','Home Delivery']].map(([val, label]) => {
                       const active = deliveryMode === val;
+                      const disabled = val === 'home_delivery' && !homeDeliveryEnabled;
                       return (
-                        <button key={val} onClick={() => setDeliveryMode(val)} style={{
-                          flex:1, padding: isMobile?'14px 0':'10px 0', borderRadius:12,
-                          border: `1.5px solid ${active ? primaryColor : '#e0d0d5'}`,
-                          fontSize: isMobile?14:11, fontWeight:700, cursor:'pointer',
-                          background: active ? hexToRgba(primaryColor, 0.1) : 'transparent',
-                          color: active ? primaryColor : '#666',
-                          fontFamily:"'Quicksand',sans-serif", transition:'all 0.15s',
-                        }}>{label}</button>
+                        <button key={val}
+                          onClick={() => !disabled && setDeliveryMode(val)}
+                          style={{
+                            flex:1, padding: isMobile?'14px 0':'10px 0', borderRadius:12,
+                            border: `1.5px solid ${active ? primaryColor : '#e0d0d5'}`,
+                            fontSize: isMobile?14:11, fontWeight:700,
+                            cursor: disabled ? 'not-allowed' : 'pointer',
+                            background: disabled ? '#f5f5f5' : active ? hexToRgba(primaryColor, 0.1) : 'transparent',
+                            color: disabled ? '#bbb' : active ? primaryColor : '#666',
+                            fontFamily:"'Quicksand',sans-serif", transition:'all 0.15s',
+                            position: 'relative',
+                          }}
+                        >
+                          {label}
+                          {disabled && (
+                            <div style={{ fontSize: isMobile?9:8, fontWeight:600, color:'#bbb', marginTop:2 }}>
+                              Not available
+                            </div>
+                          )}
+                        </button>
                       );
                     })}
                   </div>

@@ -87,6 +87,19 @@ function createApiClient(supabaseClient) {
       if (!r.ok) throw new Error(json.error ?? `Order failed (${r.status})`);
       return json;
     },
+    fetchBakerSettings: () => authFetch('/api/baker/settings'),
+    updateBakerSettings: (settings) =>
+      authFetch('/api/baker/settings', { method: 'PUT', body: JSON.stringify(settings) }),
+    updateBakerProfile: (fields) =>
+      authFetch('/api/baker/profile', { method: 'PATCH', body: JSON.stringify(fields) }),
+    fetchBillingStatus:       () => authFetch('/api/billing/status'),
+    fetchBillingPeriods:      () => authFetch('/api/billing/periods'),
+    activateSparkPlan:   () => authFetch('/api/billing/activate-spark', { method: 'POST' }),
+    fetchSubscriptionHistory: () => authFetch('/api/baker/subscription/history'),
+    createSubscription: (tier, billing_period_id) =>
+      authFetch('/api/billing/subscribe', { method: 'POST', body: JSON.stringify({ tier, billing_period_id }) }),
+    cancelSubscription: () =>
+      authFetch('/api/billing/cancel', { method: 'POST' }),
     signOut: () => supabaseClient.auth.signOut(),
     changePassword: (newPassword) => supabaseClient.auth.updateUser({ password: newPassword }),
   };
