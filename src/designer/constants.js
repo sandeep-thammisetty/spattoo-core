@@ -23,8 +23,9 @@ export const GOLD_COLOR       = '#D4AF37';
 export const SELECTION_COLOR  = '#6c47ff';   // emissive highlight on selected elements
 
 // ── Camera ────────────────────────────────────────────────────────────────────
-export const CAMERA_POSITION  = [4.5, 5.5, 6.5];
-export const CAMERA_FOV       = 42;
+export const CAMERA_POSITION        = [4.5, 5.5, 6.5];
+export const CAMERA_POSITION_MOBILE = [6, 7, 9];
+export const CAMERA_FOV             = 42;
 
 // ── Top cap ───────────────────────────────────────────────────────────────────
 // CakeTier renders a thin cap disc (height 0.02) on top of each tier so the

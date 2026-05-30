@@ -535,6 +535,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
   const [bakerData,    setBakerData]    = useState(null);
   const [userData,     setUserData]     = useState(null);
   const [bakerSettings, setBakerSettings] = useState({});
+  const [windowWidth, setWindowWidth] = useState(() => (typeof window !== 'undefined' ? window.innerWidth : 1280));
   const settingsRef      = useRef(null);
   const profileRef       = useRef(null);
   const hitTestRef       = useRef(null);
@@ -554,6 +555,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
   const initials = userData
     ? `${(userData.firstName || '')[0] || ''}${(userData.lastName || '')[0] || ''}`.toUpperCase() || '?'
     : '?';
+  const isMobile = windowWidth <= 640;
 
   useEffect(() => {
     if (apiClient?.fetchBakerSettings) {
@@ -599,6 +601,12 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
     }
     document.addEventListener('mousedown', onMouseDown);
     return () => document.removeEventListener('mousedown', onMouseDown);
+  }, []);
+
+  useEffect(() => {
+    function onResize() { setWindowWidth(window.innerWidth); }
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
   }, []);
 
   async function handleSaveTemplate() {
@@ -1231,11 +1239,58 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
       <style>{`@keyframes spattooFadeIn { from { opacity: 0 } to { opacity: 1 } }`}</style>
       <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
 
+      {/* ── Mobile header ── */}
+      {isMobile && (
+        <div style={s.mobileHeader}>
+          <div style={s.topLogo}>
+            {bakerData?.logo_url
+              ? <img src={bakerData.logo_url} alt="" style={s.topLogoImg} />
+              : <div style={s.topLogoText}>{bakerData?.name ?? 'My Bakery'}</div>
+            }
+          </div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <div style={{ position: 'relative' }} ref={settingsRef}>
+              <button
+                style={{ ...s.sidebarBtn, color: settingsOpen ? '#1a1a1a' : '#555', background: settingsOpen ? 'rgba(0,0,0,0.06)' : 'none', width: 38, height: 38 }}
+                onClick={() => { setSettingsOpen(o => !o); setProfileOpen(false); }}>
+                <GearIcon size={18} />
+              </button>
+              {settingsOpen && (
+                <div style={{ ...s.dropdown, left: 'auto', right: 0, top: 'calc(100% + 8px)' }}>
+                  <div style={s.dropdownSection}>Settings</div>
+                  <button style={s.dropdownItem} onClick={() => { setSettingsPanelOpen(true); setSettingsOpen(false); }}>Store Settings</button>
+                  <button style={s.dropdownItem} onClick={() => { setBillingPanelOpen(true); setSettingsOpen(false); }}>Billing</button>
+                  <button style={s.dropdownItem} onClick={() => { setColorGuideOpen(true); setSettingsOpen(false); }}>Color Guide</button>
+                  <button style={s.dropdownItem} onClick={() => { setAddUserModal(true); setSettingsOpen(false); }}>Add User</button>
+                </div>
+              )}
+            </div>
+            <div style={{ position: 'relative' }} ref={profileRef}>
+              <button style={{ ...s.sidebarProfileBtn, background: primaryColor }}
+                onClick={() => { setProfileOpen(o => !o); setSettingsOpen(false); }}>
+                {initials}
+              </button>
+              {profileOpen && (
+                <div style={{ ...s.dropdown, left: 'auto', right: 0, top: 'calc(100% + 8px)' }}>
+                  <div style={s.dropdownUserInfo}>
+                    <div style={s.dropdownName}>{userData ? `${userData.firstName} ${userData.lastName}`.trim() : 'My Account'}</div>
+                    {userData?.email && <div style={s.dropdownEmail}>{userData.email}</div>}
+                  </div>
+                  <div style={s.dropdownDivider} />
+                  <button style={s.dropdownItem} onClick={() => { setChangePasswordModal(true); setProfileOpen(false); }}>Change Password</button>
+                  <button style={s.dropdownItem} onClick={() => { apiClient?.signOut?.() ?? supabase?.auth.signOut(); setProfileOpen(false); }}>Sign out</button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Main ── */}
       <div style={s.main}>
 
         {/* ── Left column: logo + sidebar ── */}
-        <div style={s.leftCol}>
+        {!isMobile && <div style={s.leftCol}>
           {/* Logo sits above the dark pill */}
           <div style={s.topLogo}>
             {bakerData?.logo_url
@@ -1341,11 +1396,11 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
             </div>
           </div>
         </div>
-        </div>{/* end leftCol */}
+        </div>}{/* end leftCol */}
 
         {/* ── Elements flyout ── */}
         {elementsOpen && (
-          <div style={s.flyout}>
+          <div style={{ ...s.flyout, ...(isMobile ? s.flyoutMobile : {}) }}>
             <div style={s.flyoutHeader}>
               <span style={s.flyoutTitle}>Elements</span>
               <button style={s.iconBtn} onClick={() => setElementsOpen(false)}>✕</button>
@@ -1406,7 +1461,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
 
         {/* ── Templates flyout ── */}
         {templatesOpen && (
-          <div style={s.flyout}>
+          <div style={{ ...s.flyout, ...(isMobile ? s.flyoutMobile : {}) }}>
             <div style={s.flyoutHeader}>
               <span style={s.flyoutTitle}>Templates</span>
               <button style={s.iconBtn} onClick={() => setTemplatesOpen(false)}>✕</button>
@@ -1498,6 +1553,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
               onGroupMove={handleGroupMove}
               stickerToolbar={selectedEl?.type === 'sticker' ? buildToolbar(selectedEl) : null}
               hitTestRef={hitTestRef}
+              isMobile={isMobile}
             />
           </Suspense>
 
@@ -1554,7 +1610,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
 
           {/* ── Right edit panel — driven by element caps ── */}
           {showRightPanel && (
-            <div style={s.wheelPanel}>
+            <div style={isMobile ? s.wheelPanelMobile : s.wheelPanel}>
               <div style={s.wheelHeader}>
                 <span style={s.wheelTitle}>
                   {selectedEl?.type === 'tier'    ? TIER_LABELS[selectedEl.index]
@@ -1602,7 +1658,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
 
           {/* ── Cream Piping popup ── */}
           {pipingPopupOpen && pipingPopupEl && (
-            <div style={s.pipingPopup}>
+            <div style={isMobile ? s.pipingPopupMobile : s.pipingPopup}>
               {/* Header: thumbnail + style name + close */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                 <div style={{ width: 36, height: 36, borderRadius: 8, overflow: 'hidden', border: '1.5px solid #f0dce3', background: '#fff', flexShrink: 0 }}>
@@ -1655,6 +1711,36 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
       {selectedEl?.type !== 'text' && (
         <div style={s.orderBar}>
           <button style={{ ...s.orderBtn, ...brandBtn }} onClick={handleOrder}>{editingOrder ? 'Update Design' : 'Order This Cake'}</button>
+        </div>
+      )}
+
+      {/* ── Mobile bottom nav ── */}
+      {isMobile && (
+        <div style={s.mobileBottomNav}>
+          {[
+            { id: 'dashboard',  icon: <DashboardIcon size={20} /> },
+            { id: 'templates',  icon: <TemplatesIcon size={20} /> },
+            { id: 'elements',   icon: <ElementsIcon size={20} /> },
+            { id: 'text',       icon: <TextIcon size={20} /> },
+            { id: 'orders',     icon: <OrdersIcon size={20} /> },
+            { id: 'customers',  icon: <CustomersIcon size={20} /> },
+          ].map(({ id, icon }) => {
+            const active = id === 'elements' ? elementsOpen : id === 'templates' ? templatesOpen : false;
+            return (
+              <button key={id}
+                style={{ ...s.sidebarBtn, ...(active ? s.sidebarBtnActive : {}) }}
+                onClick={() => {
+                  if (id === 'text')      { stopRotatingOnFirstEdit(); addText(); }
+                  if (id === 'elements')  openElements();
+                  if (id === 'templates') openTemplates();
+                  if (id === 'dashboard') setDashboardOpen(true);
+                  if (id === 'orders')    setOrdersPanelOpen(true);
+                  if (id === 'customers') setCustomersPanelOpen(true);
+                }}>
+                {icon}
+              </button>
+            );
+          })}
         </div>
       )}
 
@@ -2180,6 +2266,46 @@ const s = {
     boxShadow: '0 4px 24px rgba(107,45,66,0.14)',
     display: 'flex', flexDirection: 'column', gap: 10,
     overflowY: 'auto',
+    zIndex: 20,
+  },
+
+  // Mobile-specific
+  mobileHeader: {
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+    padding: '0 16px', height: 52, flexShrink: 0,
+    background: '#fff', borderBottom: '1px solid #f0e8ea',
+    position: 'relative', zIndex: 10,
+  },
+  mobileBottomNav: {
+    display: 'flex', justifyContent: 'space-around', alignItems: 'center',
+    height: 60, background: '#18191b', flexShrink: 0, padding: '0 8px',
+  },
+  flyoutMobile: {
+    left: 0, top: 0, bottom: 0, width: '100%',
+    margin: 0, borderRadius: 0, zIndex: 30,
+  },
+  wheelPanelMobile: {
+    position: 'absolute',
+    bottom: 0, left: 0, right: 0,
+    background: 'rgba(255,255,255,0.97)',
+    backdropFilter: 'blur(18px)',
+    WebkitBackdropFilter: 'blur(18px)',
+    borderRadius: '20px 20px 0 0',
+    padding: '14px 16px 24px',
+    boxShadow: '0 -4px 24px rgba(107,45,66,0.14)',
+    zIndex: 20,
+  },
+  pipingPopupMobile: {
+    position: 'absolute',
+    bottom: 0, left: 0, right: 0,
+    background: 'rgba(255,255,255,0.97)',
+    backdropFilter: 'blur(18px)',
+    WebkitBackdropFilter: 'blur(18px)',
+    borderRadius: '20px 20px 0 0',
+    padding: '14px 16px 24px',
+    boxShadow: '0 -4px 24px rgba(107,45,66,0.14)',
+    display: 'flex', flexDirection: 'column', gap: 10,
+    overflowY: 'auto', maxHeight: '60vh',
     zIndex: 20,
   },
 };

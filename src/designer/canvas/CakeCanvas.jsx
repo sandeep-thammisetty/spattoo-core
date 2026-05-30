@@ -8,7 +8,7 @@ import { Drip, TopFlowers, SideFlowers } from './Decorations';
 import {
   STICKER_SIZE, GOLD_COLOR, SELECTION_COLOR,
   PICKER_ORIGIN_X, PICKER_STEP_X, PICKER_ORIGIN_Z, PICKER_STEP_Z,
-  CAMERA_POSITION, CAMERA_FOV,
+  CAMERA_POSITION, CAMERA_POSITION_MOBILE, CAMERA_FOV,
   SIDE_STICKER_SURFACE_OFFSET, FLAT_STICKER_Y_OFFSET,
 } from '../constants.js';
 import { pointerRay, cylinderHit, planeHit, buildRay } from '../utils/raycasting.js';
@@ -1250,6 +1250,7 @@ export default function CakeCanvas({
   onTopperClick, topperSelected = false, topperToolbar,
   selectedStickerIds, onStickerSelect, onStickerLongPress, onStickerMove, onGroupMove, stickerToolbar,
   hitTestRef,
+  isMobile = false,
 }) {
   const pointerRef  = useRef({ x: 0, y: 0, dragged: false });
   const orbitRef    = useRef();
@@ -1307,7 +1308,7 @@ export default function CakeCanvas({
   return (
     <Canvas
       shadows
-      camera={{ position: CAMERA_POSITION, fov: CAMERA_FOV }}
+      camera={{ position: isMobile ? CAMERA_POSITION_MOBILE : CAMERA_POSITION, fov: CAMERA_FOV }}
       style={{ position: 'absolute', inset: 0 }}
       gl={{ preserveDrawingBuffer: true }}
       onCreated={({ gl }) => { glRef.current = gl; gl.localClippingEnabled = true; }}
