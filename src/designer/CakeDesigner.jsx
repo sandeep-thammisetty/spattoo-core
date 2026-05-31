@@ -1141,8 +1141,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
     (design.stickers.find(s => s.id === selectedEl.id)?.placementMode === 'faux_ball_single');
   const showRightPanel = tierPanelVisible
     || (caps?.color && colorOpen)
-    || selectedStickerIsFauxBall
-    || (selectedEl?.type === 'sticker' && caps?.resize);
+    || selectedStickerIsFauxBall;
 
   // ── Caps-driven floating toolbar (text + piping) ──────────────────────────
   function buildToolbar(el) {
@@ -1185,11 +1184,32 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
     }
 
     if (c.resize && el.type === 'sticker') {
-      const sticker = design.stickers.find(s => s.id === el.id);
+      const sticker = design.stickers.find(stkr => stkr.id === el.id);
       const sc = sticker?.scale ?? 1;
+      const SC_MIN = 25, SC_MAX = 600;
+      const scPct = Math.min(100, Math.max(0, ((Math.round(sc * 100) - SC_MIN) / (SC_MAX - SC_MIN)) * 100));
+      function scFromEvent(e) {
+        const rect = e.currentTarget.getBoundingClientRect();
+        const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+        return (SC_MIN + Math.round(ratio * (SC_MAX - SC_MIN) / 5) * 5) / 100;
+      }
       items.push(
-        <button key="sc-" style={s.tbIconBtn} onClick={() => updateSticker(el.id, { scale: Math.max(0.25, +(sc - 0.15).toFixed(2)) })}>−</button>,
-        <button key="sc+" style={s.tbIconBtn} onClick={() => updateSticker(el.id, { scale: Math.min(6, +(sc + 0.15).toFixed(2)) })}>+</button>,
+        <div key="sc-slider" style={{ display:'flex', alignItems:'center', gap:6 }}>
+          <span style={{ fontSize:9, fontWeight:700, color:'#888', letterSpacing:0.3 }}>Size</span>
+          <div
+            style={{ width:80, position:'relative', height:20, display:'flex', alignItems:'center', cursor:'pointer', touchAction:'none', userSelect:'none' }}
+            onPointerDown={e => { e.stopPropagation(); e.currentTarget.setPointerCapture(e.pointerId); updateSticker(el.id, { scale: scFromEvent(e) }); }}
+            onPointerMove={e => { if (!e.currentTarget.hasPointerCapture(e.pointerId)) return; e.stopPropagation(); updateSticker(el.id, { scale: scFromEvent(e) }); }}
+            onPointerUp={e => { e.stopPropagation(); e.currentTarget.releasePointerCapture(e.pointerId); }}
+            onPointerCancel={e => { e.currentTarget.releasePointerCapture(e.pointerId); }}
+          >
+            <div style={{ width:'100%', height:4, borderRadius:2, background:'#e0e0e0', position:'relative' }}>
+              <div style={{ position:'absolute', left:0, top:0, height:'100%', width:`${scPct}%`, background:'#9b5268', borderRadius:2 }} />
+            </div>
+            <div style={{ position:'absolute', left:`${scPct}%`, transform:'translateX(-50%)', width:14, height:14, borderRadius:'50%', background:'#9b5268', pointerEvents:'none' }} />
+          </div>
+          <span style={{ fontSize:11, fontWeight:700, color:'#333', minWidth:30 }}>{Math.round(sc * 100)}%</span>
+        </div>,
         <div key="d4" style={s.tbDivider} />
       );
       const isGlbTop = sticker?.zone === 'top_surface' && /\.(glb|gltf)(\?|$)/i.test(sticker?.imageUrl ?? '');
@@ -1656,17 +1676,39 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
               onStickerLongPress={handleStickerLongPress}
               onStickerMove={handleStickerMove}
               onGroupMove={handleGroupMove}
-              stickerToolbar={selectedEl?.type === 'sticker' && !selectedStickerIsFauxBall ? buildToolbar(selectedEl) : null}
+              stickerToolbar={null}
               hitTestRef={hitTestRef}
               snapCameraRef={snapCameraRef}
               cameraPosition={isMobile ? [6, 7, 9] : [4.5, 5.5, 6.5]}
             />
           </Suspense>
 
-          {/* ── Topper toolbar (DOM overlay so it doesn't orbit with the scene) ── */}
-          {selectedEl?.type === 'topper' && (
+          {/* ── Sticker & topper toolbars (DOM overlays — desktop only) ── */}
+          {!isMobile && selectedEl?.type === 'sticker' && !selectedStickerIsFauxBall && (
+            <div style={{ position:'absolute', top:16, left:'50%', transform:'translateX(-50%)', zIndex:200, pointerEvents:'auto' }}>
+              {buildToolbar(selectedEl)}
+            </div>
+          )}
+          {!isMobile && selectedEl?.type === 'topper' && (
             <div style={{ position: 'absolute', right: 16, top: '50%', transform: 'translateY(-50%)', zIndex: 200, pointerEvents: 'auto' }}>
               {buildToolbar(selectedEl)}
+            </div>
+          )}
+
+          {/* ── Mobile edit sheet — stickers & toppers ── */}
+          {isMobile && selectedEl && (selectedEl.type === 'sticker' || selectedEl.type === 'topper') && !selectedStickerIsFauxBall && (
+            <div style={s.editSheetMobile}>
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10 }}>
+                <span style={s.wheelTitle}>
+                  {selectedEl.type === 'topper'
+                    ? (design.topper?.name ?? 'Topper')
+                    : (design.stickers.find(sk => sk.id === selectedEl.id)?.name ?? 'Sticker')}
+                </span>
+                <button style={s.iconBtn} onClick={clearAllSelections}>✕</button>
+              </div>
+              <div style={{ overflowX:'auto', WebkitOverflowScrolling:'touch', paddingBottom:4 }}>
+                {buildToolbar(selectedEl)}
+              </div>
             </div>
           )}
 
@@ -2590,6 +2632,18 @@ const s = {
     padding: '14px 16px 24px',
     boxShadow: '0 -4px 24px rgba(107,45,66,0.14)',
     zIndex: 20,
+  },
+  editSheetMobile: {
+    position: 'absolute',
+    bottom: 0, left: 0, right: 0,
+    background: 'rgba(255,255,255,0.97)',
+    backdropFilter: 'blur(18px)',
+    WebkitBackdropFilter: 'blur(18px)',
+    borderRadius: '20px 20px 0 0',
+    padding: '14px 16px 24px',
+    boxShadow: '0 -4px 24px rgba(107,45,66,0.14)',
+    zIndex: 25,
+    display: 'flex', flexDirection: 'column',
   },
   pipingPopupMobile: {
     position: 'absolute',
