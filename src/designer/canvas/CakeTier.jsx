@@ -18,8 +18,10 @@ function extractGeo(scene) {
   return { geo, sizeY: size.y };
 }
 
+const DEG = Math.PI / 180;
+
 // ── Top piping ring — GLB shells instanced around the top edge ────────────────
-function TopPipingRing({ topY, radius, glbPath, color = '#ffffff', sizeFactor = 1, selected = false, onClick }) {
+function TopPipingRing({ topY, radius, glbPath, color = '#ffffff', sizeFactor = 1, rotationOffset = [0,0,0], selected = false, onClick }) {
   const { scene } = useGLTF(glbPath);
 
   const { geometry, shellScale } = useMemo(() => {
@@ -57,7 +59,7 @@ function TopPipingRing({ topY, radius, glbPath, color = '#ffffff', sizeFactor = 
 }
 
 // ── Bottom piping ring — GLB shells hugging the cake base ─────────────────────
-function BottomPipingRing({ yBase, radius, glbPath, color = '#f5e6c8', sizeFactor = 1, selected = false, onClick }) {
+function BottomPipingRing({ yBase, radius, glbPath, color = '#f5e6c8', sizeFactor = 1, rotationOffset = [0,0,0], selected = false, onClick }) {
   const { scene } = useGLTF(glbPath);
 
   const { geometry, shellScale, positions } = useMemo(() => {
@@ -80,7 +82,9 @@ function BottomPipingRing({ yBase, radius, glbPath, color = '#f5e6c8', sizeFacto
   return (
     <group onClick={onClick}>
       {positions.map((u, i) => (
-        <mesh key={i} geometry={geometry} position={u.pos} rotation={[0, u.rotY, 0]} scale={shellScale} castShadow>
+        <mesh key={i} geometry={geometry} position={u.pos}
+          rotation={[rotationOffset[0] * DEG, u.rotY + rotationOffset[1] * DEG, rotationOffset[2] * DEG]}
+          scale={shellScale} castShadow>
           <meshPhysicalMaterial
             color={color} roughness={0.85}
             sheen={0.4} sheenRoughness={0.9} sheenColor={color}
@@ -233,11 +237,13 @@ export default function CakeTier({
         {topPiping && (
           <TopPipingRing topY={topY} radius={radius} glbPath={topPiping.glbUrl} color={topPiping.color}
             sizeFactor={topPiping.size ?? 1}
+            rotationOffset={topPiping.rotation ?? [0,0,0]}
             selected={topPipingSelected} onClick={e => { e.stopPropagation(); onTopPipingClick?.(e); }} />
         )}
         {bottomPiping && (
           <BottomPipingRing yBase={yBase} radius={radius} glbPath={bottomPiping.glbUrl} color={bottomPiping.color}
             sizeFactor={bottomPiping.size ?? 1}
+            rotationOffset={bottomPiping.rotation ?? [0,0,0]}
             selected={bottomPipingSelected} onClick={e => { e.stopPropagation(); onBottomPipingClick?.(e); }} />
         )}
       </group>

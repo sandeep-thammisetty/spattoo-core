@@ -985,7 +985,8 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
     } else {
       const color = zone === 'rim' ? pipingRimColor : pipingBoardColor;
       const size  = zone === 'rim' ? pipingRimSize  : pipingBoardSize;
-      const piping = { id: pipingPopupEl.id, glbUrl: pipingPopupEl.image_url, name: pipingPopupEl.name, color, size };
+      const rotation = pipingPopupEl.placement_config?.rotation ?? null;
+      const piping = { id: pipingPopupEl.id, glbUrl: pipingPopupEl.image_url, name: pipingPopupEl.name, color, size, ...(rotation ? { rotation } : {}) };
       if (zone === 'rim') setTopPiping(tierIndex, piping);
       else                setBottomPiping(tierIndex, piping);
     }
