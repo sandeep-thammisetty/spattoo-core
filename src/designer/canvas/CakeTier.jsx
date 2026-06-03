@@ -72,8 +72,8 @@ function BottomPipingRing({ yBase, radius, glbPath, color = '#f5e6c8', sizeFacto
     const sc = (radius * 0.24) / result.sizeY * sizeFactor;
     const step  = radius * 0.28 * sizeFactor;
     const count = Math.max(6, Math.round((2 * Math.PI * radius) / step));
-    const r = radius * 1.01;                  // pressed against cake wall
-    const y = yBase + sc * 0.5;              // lifted so element stands at base
+    const r = radius + sc * 0.5;             // offset by half element depth so it sits outside cake
+    const y = yBase + sc * 0.5;             // lifted so element stands at base
     const pts = Array.from({ length: count }, (_, i) => {
       const angle = (i / count) * Math.PI * 2;
       return { pos: [Math.cos(angle) * r, y, Math.sin(angle) * r], rotY: angle };
