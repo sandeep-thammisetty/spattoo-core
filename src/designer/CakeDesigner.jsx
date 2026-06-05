@@ -23,6 +23,47 @@ function hexToRgba(hex, alpha) {
   return `rgba(${parseInt(h.slice(0,2),16)},${parseInt(h.slice(2,4),16)},${parseInt(h.slice(4,6),16)},${alpha})`;
 }
 
+// Single source of truth for mapping an element's placement_config to the piping
+// fields a ring consumes. Rim (top) and board (bottom) are symmetric: top_* mirrors
+// bottom_*. Returned keys match what TopPipingRing / BottomPipingRing expect.
+function pipingPlacementFromConfig(placementConfig, isTop) {
+  const pc = placementConfig ?? {};
+  if (isTop) {
+    return {
+      flipTop:           pc.top_flip          ?? false,
+      rotation:          pc.top_rotation       ?? null,
+      extraRadialOffset: pc.top_radial_offset  ?? null,
+      yOffset:           pc.top_y_offset        ?? null,
+      swagCount:         pc.top_swag_count      ?? null,
+      swagDepth:         pc.top_swag_depth      ?? null,
+      swagTilt:          pc.top_swag_tilt       ?? null,
+    };
+  }
+  return {
+    flipBottom:        pc.bottom_flip          ?? true,
+    bottomRotation:    pc.bottom_rotation      ?? null,
+    extraRadialOffset: pc.bottom_radial_offset ?? null,
+    yOffset:           pc.bottom_y_offset      ?? null,
+    swagCount:         pc.bottom_swag_count    ?? null,
+    swagDepth:         pc.bottom_swag_depth    ?? null,
+    swagTilt:          pc.bottom_swag_tilt     ?? null,
+  };
+}
+
+// True when a ring's current placement differs from the config-derived placement.
+// Used by the load-time sync to avoid redundant setState (and re-render loops).
+function pipingPlacementChanged(current, next, isTop) {
+  const flipKey = isTop ? 'flipTop' : 'flipBottom';
+  const rotKey  = isTop ? 'rotation' : 'bottomRotation';
+  const flipDefault = !isTop;
+  return (
+    JSON.stringify(next[rotKey] ?? null) !== JSON.stringify(current[rotKey] ?? null) ||
+    (next[flipKey] ?? flipDefault)       !== (current[flipKey] ?? flipDefault) ||
+    (next.extraRadialOffset ?? null)     !== (current.extraRadialOffset ?? null) ||
+    (next.yOffset ?? null)               !== (current.yOffset ?? null)
+  );
+}
+
 const TIER_LABELS = ['Bottom Tier', '2nd Tier', '3rd Tier', 'Top Tier'];
 
 // ── Color picker (react-colorful) ─────────────────────────────────────────────
@@ -990,7 +1031,22 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
   }
 
   function handlePipingBoardYOffsetChange(v) {
-    const clamped = Math.max(0, v);
+    // Cap the rise so the top of the cream stops when it reaches the top of the cake.
+    // The piping shell sits at yBase + baseYOffset + userYOffset and, after the ring's
+    // size-normalisation, its scaled height is radius * 0.24 * size (see BottomPipingRing).
+    // So the top touches the cake top when userYOffset = height - baseYOffset - shellHeight.
+    let maxOffset = Infinity;
+    design.tiers.forEach((tier, i) => {
+      if (tier.bottomPiping?.id === pipingPopupEl?.id) {
+        const size        = tier.bottomPiping.size ?? 1;
+        const baseYOffset = tier.bottomPiping.yOffset ?? 0;
+        // Resolved radius/height (design.tiers may omit them — defaults live in canvasConfig).
+        const { radius, height } = canvasConfig.tiers[i];
+        const shellHeight = radius * 0.24 * size;
+        maxOffset = Math.min(maxOffset, height - baseYOffset - shellHeight);
+      }
+    });
+    const clamped = Math.min(Math.max(0, v), Math.max(0, maxOffset));
     setPipingBoardYOffset(clamped);
     design.tiers.forEach((tier, i) => {
       if (tier.bottomPiping?.id === pipingPopupEl?.id)
@@ -1010,28 +1066,20 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
   }
 
   function togglePipingZone(tierIndex, zone, isOn) {
+    const isTop = zone === 'rim';
     if (isOn) {
-      if (zone === 'rim') setTopPiping(tierIndex, null);
-      else                setBottomPiping(tierIndex, null);
-    } else {
-      const color = zone === 'rim' ? pipingRimColor : pipingBoardColor;
-      const size  = zone === 'rim' ? pipingRimSize  : pipingBoardSize;
-      const rotation         = pipingPopupEl.placement_config?.rotation         ?? null;
-      const flipBottom       = pipingPopupEl.placement_config?.bottom_flip      ?? true;
-      const bottomRotation   = pipingPopupEl.placement_config?.bottom_rotation  ?? null;
-      const extraRadialOffset = pipingPopupEl.placement_config?.bottom_radial_offset ?? null;
-      const yOffset          = pipingPopupEl.placement_config?.bottom_y_offset  ?? null;
-      const piping = {
-        id: pipingPopupEl.id, glbUrl: pipingPopupEl.image_url, name: pipingPopupEl.name,
-        color, size, flipBottom,
-        ...(rotation ? { rotation } : {}),
-        ...(bottomRotation ? { bottomRotation } : {}),
-        ...(extraRadialOffset != null ? { extraRadialOffset } : {}),
-        ...(yOffset != null ? { yOffset } : {}),
-      };
-      if (zone === 'rim') setTopPiping(tierIndex, piping);
-      else                setBottomPiping(tierIndex, piping);
+      if (isTop) setTopPiping(tierIndex, null);
+      else       setBottomPiping(tierIndex, null);
+      return;
     }
+    const piping = {
+      id: pipingPopupEl.id, glbUrl: pipingPopupEl.image_url, name: pipingPopupEl.name,
+      color: isTop ? pipingRimColor : pipingBoardColor,
+      size:  isTop ? pipingRimSize  : pipingBoardSize,
+      ...pipingPlacementFromConfig(pipingPopupEl.placement_config, isTop),
+    };
+    if (isTop) setTopPiping(tierIndex, piping);
+    else       setBottomPiping(tierIndex, piping);
   }
 
   async function openTemplates() {
@@ -1269,18 +1317,13 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   function handlePipingStyleSelect(element) {
     if (!pipingTarget) return;
     const { tierIndex, zone } = pipingTarget;
-    const flipBottom        = element.placement_config?.bottom_flip         ?? true;
-    const bottomRotation    = element.placement_config?.bottom_rotation    ?? null;
-    const extraRadialOffset = element.placement_config?.bottom_radial_offset ?? null;
-    const yOffset           = element.placement_config?.bottom_y_offset    ?? null;
+    const isTop = zone === 'top';
     const piping = {
-      id: element.id, glbUrl: element.glbUrl, name: element.name, color: '#f5e6c8', flipBottom,
-      ...(bottomRotation ? { bottomRotation } : {}),
-      ...(extraRadialOffset != null ? { extraRadialOffset } : {}),
-      ...(yOffset != null ? { yOffset } : {}),
+      id: element.id, glbUrl: element.glbUrl, name: element.name, color: '#f5e6c8',
+      ...pipingPlacementFromConfig(element.placement_config, isTop),
     };
-    if (zone === 'top') setTopPiping(tierIndex, piping);
-    else setBottomPiping(tierIndex, piping);
+    if (isTop) setTopPiping(tierIndex, piping);
+    else       setBottomPiping(tierIndex, piping);
     setPipingTarget(null);
   }
 
@@ -1371,37 +1414,20 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // Sync placement_config-derived fields from DB into any already-applied piping
   useEffect(() => {
     if (!creamPipingEls.length) return;
-    const configById = Object.fromEntries(
+    const placementById = Object.fromEntries(
       creamPipingEls.map(e => [e.id, {
-        rotation:           e.placement_config?.rotation             ?? null,
-        flipBottom:         e.placement_config?.bottom_flip          ?? true,
-        bottomRotation:     e.placement_config?.bottom_rotation      ?? null,
-        extraRadialOffset:  e.placement_config?.bottom_radial_offset ?? null,
-        yOffset:            e.placement_config?.bottom_y_offset      ?? null,
+        top:    pipingPlacementFromConfig(e.placement_config, true),
+        bottom: pipingPlacementFromConfig(e.placement_config, false),
       }])
     );
     design.tiers.forEach((tier, i) => {
-      if (tier.topPiping && configById[tier.topPiping.id] !== undefined) {
-        const { rotation: rot } = configById[tier.topPiping.id];
-        if (JSON.stringify(rot) !== JSON.stringify(tier.topPiping.rotation ?? null))
-          setTopPiping(i, { ...tier.topPiping, rotation: rot });
-      }
-      if (tier.bottomPiping && configById[tier.bottomPiping.id] !== undefined) {
-        const { rotation: rot, flipBottom, bottomRotation, extraRadialOffset, yOffset } = configById[tier.bottomPiping.id];
-        const changed =
-          JSON.stringify(rot) !== JSON.stringify(tier.bottomPiping.rotation ?? null) ||
-          flipBottom !== (tier.bottomPiping.flipBottom ?? true) ||
-          JSON.stringify(bottomRotation) !== JSON.stringify(tier.bottomPiping.bottomRotation ?? null) ||
-          extraRadialOffset !== (tier.bottomPiping.extraRadialOffset ?? null) ||
-          yOffset !== (tier.bottomPiping.yOffset ?? null);
-        if (changed)
-          setBottomPiping(i, {
-            ...tier.bottomPiping, rotation: rot, flipBottom,
-            ...(bottomRotation ? { bottomRotation } : {}),
-            ...(extraRadialOffset != null ? { extraRadialOffset } : {}),
-            ...(yOffset != null ? { yOffset } : {}),
-          });
-      }
+      const top = tier.topPiping && placementById[tier.topPiping.id]?.top;
+      if (top && pipingPlacementChanged(tier.topPiping, top, true))
+        setTopPiping(i, { ...tier.topPiping, ...top });
+
+      const bottom = tier.bottomPiping && placementById[tier.bottomPiping.id]?.bottom;
+      if (bottom && pipingPlacementChanged(tier.bottomPiping, bottom, false))
+        setBottomPiping(i, { ...tier.bottomPiping, ...bottom });
     });
   }, [creamPipingEls]);
 

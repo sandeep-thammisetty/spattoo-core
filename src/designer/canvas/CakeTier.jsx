@@ -20,42 +20,114 @@ function extractGeo(scene) {
 
 const DEG = Math.PI / 180;
 
-// ── Top piping ring — GLB shells instanced around the top edge ────────────────
-function TopPipingRing({ topY, radius, glbPath, color = '#ffffff', sizeFactor = 1, rotationOffset = [0,0,0], selected = false, onClick }) {
+// Bend a flat piping ring into `swagCount` scalloped drapes (garland/swag look).
+// Returns one entry per shell { pos, rotY, tq }:
+//   pos  — world position, with the scallop drop baked into y
+//   rotY — yaw so the shell faces outward (same as the flat ring)
+//   tq   — a quaternion [x,y,z,w] that pitches the shell about the WORLD radial
+//          axis to follow the drape's slope. Pitching about the radial axis (not a
+//          shell-local axis) is independent of the GLB's internal orientation, so it
+//          leans the upright shell along the drape instead of rolling it.
+// Shells are spaced by equal arc-length ALONG the draped curve (not the flat circle)
+// so they stay touching through the dips. swagDepth/swagTilt are in cake units / 0–1.
+// The calibrator (PipingCalibrator.jsx) keeps an identical copy for an exact preview.
+function buildSwagRing({ r, baseY, step, swagCount, swagDepth, swagTilt = 0.5 }) {
+  const dipAt = a => -swagDepth * (1 - Math.cos(a * swagCount)) / 2;
+  // Sample the wavy circle and accumulate arc length.
+  const N = 1440;
+  const cum = [0];
+  let px = r, py = baseY + dipAt(0), pz = 0;
+  for (let s = 1; s <= N; s++) {
+    const a = (s / N) * Math.PI * 2;
+    const cx = Math.cos(a) * r, cy = baseY + dipAt(a), cz = Math.sin(a) * r;
+    cum.push(cum[s - 1] + Math.hypot(cx - px, cy - py, cz - pz));
+    px = cx; py = cy; pz = cz;
+  }
+  const total = cum[N];
+  const count = Math.max(6, Math.round(total / step));
+  const out = [];
+  let seg = 0;
+  for (let j = 0; j < count; j++) {
+    const target = (j / count) * total;            // monotonically increasing
+    while (seg < N && cum[seg + 1] < target) seg++;
+    const a0 = (seg / N) * Math.PI * 2, a1 = ((seg + 1) / N) * Math.PI * 2;
+    const f  = (target - cum[seg]) / Math.max(1e-9, cum[seg + 1] - cum[seg]);
+    const a  = a0 + (a1 - a0) * f;
+    const slope = -(swagDepth * swagCount / 2) * Math.sin(a * swagCount); // d(dip)/d(angle)
+    const tilt  = -swagTilt * Math.atan2(slope, r);
+    const sh = Math.sin(tilt / 2), ch = Math.cos(tilt / 2);
+    // Rotation about world radial axis (cos a, 0, sin a).
+    const tq = [Math.cos(a) * sh, 0, Math.sin(a) * sh, ch];
+    out.push({ pos: [Math.cos(a) * r, baseY + dipAt(a), Math.sin(a) * r], rotY: a, tq });
+  }
+  return out;
+}
+
+// ── Top piping ring — GLB shells hugging the top edge ─────────────────────────
+// Mirrors BottomPipingRing's placement model so the rim is driven entirely by
+// placement_config (top_rotation / top_radial_offset / top_y_offset / top_flip),
+// just anchored at the top edge instead of the base.
+function TopPipingRing({
+  topY, radius, glbPath, color = '#ffffff', sizeFactor = 1,
+  topRotation       = [0, 0, 0],
+  extraRadialOffset = 0,
+  yOffset           = 0,
+  flipTop = false,
+  swagCount = 0, swagDepth = 0, swagTilt = 0.5,
+  selected = false, onClick,
+}) {
   const { scene } = useGLTF(glbPath);
 
-  const { geometry, shellScale } = useMemo(() => {
+  const { geometry, shellScale, bbDepth, bbWidth } = useMemo(() => {
     const result = extractGeo(scene);
-    if (!result) return { geometry: null, shellScale: 1 };
-    return { geometry: result.geo, shellScale: (radius * 0.24) / result.sizeY * sizeFactor };
-  }, [scene, radius, sizeFactor]);
+    if (!result) return { geometry: null, shellScale: 1, bbDepth: 0, bbWidth: 0 };
+    const geo = result.geo;
+    if (flipTop) {
+      geo.applyMatrix4(new THREE.Matrix4().makeRotationX(Math.PI));
+      geo.computeBoundingBox();
+      geo.translate(0, -geo.boundingBox.min.y, 0);
+    }
+    const sc = (radius * 0.24) / result.sizeY * sizeFactor;
+    geo.computeBoundingBox();
+    const bbSize = new THREE.Vector3(); geo.boundingBox.getSize(bbSize);
+    return { geometry: geo, shellScale: sc, bbDepth: bbSize.z, bbWidth: bbSize.x };
+  }, [scene, radius, sizeFactor, flipTop]);
 
   const positions = useMemo(() => {
-    const spacingFactor = 0.28 * sizeFactor;
-    const count = Math.max(8, Math.round((2 * Math.PI * radius) / (radius * spacingFactor)));
-    const r = radius * 0.86;
+    if (!geometry) return [];
+    // Rim sits ON the top surface: pull shells inward so their outer face is flush
+    // with the edge rather than overhanging the side like the board does.
+    const r    = radius - (bbDepth / 2) * shellScale + extraRadialOffset;
+    const step = shellScale * bbWidth * 0.9 * sizeFactor;
+    if (swagCount > 0 && swagDepth > 0) {
+      return buildSwagRing({ r, baseY: topY + yOffset, step, swagCount, swagDepth, swagTilt });
+    }
+    const count = Math.max(6, Math.round((2 * Math.PI * radius) / step));
     return Array.from({ length: count }, (_, i) => {
       const angle = (i / count) * Math.PI * 2;
-      return { pos: [Math.cos(angle) * r, topY, Math.sin(angle) * r], rotY: angle };
+      return { pos: [Math.cos(angle) * r, topY + yOffset, Math.sin(angle) * r], rotY: angle, tq: [0, 0, 0, 1] };
     });
-  }, [radius, topY, sizeFactor]);
+  }, [geometry, radius, topY, yOffset, sizeFactor, shellScale, bbDepth, bbWidth, extraRadialOffset, swagCount, swagDepth, swagTilt]);
 
   if (!geometry) return null;
+
+  const ryGroup = topRotation[1] * DEG;
+  const meshRot = [topRotation[0] * DEG, 0, topRotation[2] * DEG];
 
   return (
     <group onClick={onClick}>
       {positions.map((u, i) => (
-        <group key={i} position={u.pos} rotation={[0, u.rotY, 0]}>
-          <mesh geometry={geometry}
-            rotation={[rotationOffset[0] * DEG, rotationOffset[1] * DEG, rotationOffset[2] * DEG]}
-            scale={shellScale} castShadow>
-            <meshPhysicalMaterial
-              color={color} roughness={0.85}
-              sheen={0.4} sheenRoughness={0.9} sheenColor={color}
-              emissive={selected ? '#6c47ff' : '#000000'}
-              emissiveIntensity={selected ? 0.15 : 0}
-            />
-          </mesh>
+        <group key={i} position={u.pos} quaternion={u.tq}>
+          <group rotation={[0, -u.rotY + Math.PI / 2 + ryGroup, 0]}>
+            <mesh geometry={geometry} rotation={meshRot} scale={shellScale} castShadow>
+              <meshPhysicalMaterial
+                color={color} roughness={0.85}
+                sheen={0.4} sheenRoughness={0.9} sheenColor={color}
+                emissive={selected ? '#6c47ff' : '#000000'}
+                emissiveIntensity={selected ? 0.15 : 0}
+              />
+            </mesh>
+          </group>
         </group>
       ))}
     </group>
@@ -69,6 +141,7 @@ function BottomPipingRing({
   extraRadialOffset = 0,
   yOffset           = 0,
   flipBottom = true,
+  swagCount = 0, swagDepth = 0, swagTilt = 0.5,
   selected = false, onClick,
 }) {
   const { scene } = useGLTF(glbPath);
@@ -92,15 +165,19 @@ function BottomPipingRing({
     if (!geometry) return [];
     const r    = radius + (bbDepth / 2) * shellScale + extraRadialOffset;
     const step = shellScale * bbWidth * 0.9 * sizeFactor;
+    if (swagCount > 0 && swagDepth > 0) {
+      return buildSwagRing({ r, baseY: yBase + yOffset, step, swagCount, swagDepth, swagTilt });
+    }
     const count = Math.max(6, Math.round((2 * Math.PI * radius) / step));
     return Array.from({ length: count }, (_, i) => {
       const angle = (i / count) * Math.PI * 2;
       return {
         pos: [Math.cos(angle) * r, yBase + yOffset, Math.sin(angle) * r],
         rotY: angle,
+        tq: [0, 0, 0, 1],
       };
     });
-  }, [geometry, radius, yBase, yOffset, sizeFactor, shellScale, bbDepth, bbWidth, extraRadialOffset]);
+  }, [geometry, radius, yBase, yOffset, sizeFactor, shellScale, bbDepth, bbWidth, extraRadialOffset, swagCount, swagDepth, swagTilt]);
 
   if (!geometry) return null;
 
@@ -113,15 +190,17 @@ function BottomPipingRing({
   return (
     <group onClick={onClick}>
       {positions.map((u, i) => (
-        <group key={i} position={u.pos} rotation={[0, -u.rotY + Math.PI / 2 + ryGroup, 0]}>
-          <mesh geometry={geometry} rotation={meshRot} scale={shellScale} castShadow>
-            <meshPhysicalMaterial
-              color={color} roughness={0.85}
-              sheen={0.4} sheenRoughness={0.9} sheenColor={color}
-              emissive={selected ? '#6c47ff' : '#000000'}
-              emissiveIntensity={selected ? 0.15 : 0}
-            />
-          </mesh>
+        <group key={i} position={u.pos} quaternion={u.tq}>
+          <group rotation={[0, -u.rotY + Math.PI / 2 + ryGroup, 0]}>
+            <mesh geometry={geometry} rotation={meshRot} scale={shellScale} castShadow>
+              <meshPhysicalMaterial
+                color={color} roughness={0.85}
+                sheen={0.4} sheenRoughness={0.9} sheenColor={color}
+                emissive={selected ? '#6c47ff' : '#000000'}
+                emissiveIntensity={selected ? 0.15 : 0}
+              />
+            </mesh>
+          </group>
         </group>
       ))}
     </group>
@@ -268,7 +347,11 @@ export default function CakeTier({
         {topPiping && (
           <TopPipingRing topY={topY} radius={radius} glbPath={topPiping.glbUrl} color={topPiping.color}
             sizeFactor={topPiping.size ?? 1}
-            rotationOffset={topPiping.rotation ?? [0,0,0]}
+            topRotation={topPiping.rotation ?? [0,0,0]}
+            extraRadialOffset={topPiping.extraRadialOffset ?? 0}
+            yOffset={(topPiping.yOffset ?? 0) + (topPiping.userYOffset ?? 0)}
+            flipTop={topPiping.userFlipTop !== undefined ? topPiping.userFlipTop : (topPiping.flipTop ?? false)}
+            swagCount={topPiping.swagCount ?? 0} swagDepth={topPiping.swagDepth ?? 0} swagTilt={topPiping.swagTilt ?? 0.5}
             selected={topPipingSelected} onClick={e => { e.stopPropagation(); onTopPipingClick?.(e); }} />
         )}
         {bottomPiping && (
@@ -278,6 +361,7 @@ export default function CakeTier({
             extraRadialOffset={bottomPiping.extraRadialOffset ?? 0}
             yOffset={(bottomPiping.yOffset ?? 0) + (bottomPiping.userYOffset ?? 0)}
             flipBottom={bottomPiping.userFlipBottom !== undefined ? bottomPiping.userFlipBottom : (bottomPiping.flipBottom ?? true)}
+            swagCount={bottomPiping.swagCount ?? 0} swagDepth={bottomPiping.swagDepth ?? 0} swagTilt={bottomPiping.swagTilt ?? 0.5}
             selected={bottomPipingSelected} onClick={e => { e.stopPropagation(); onBottomPipingClick?.(e); }} />
         )}
       </group>
@@ -298,7 +382,11 @@ export default function CakeTier({
       {topPiping && (
         <TopPipingRing topY={topY} radius={radius} glbPath={topPiping.glbUrl} color={topPiping.color}
           sizeFactor={topPiping.size ?? 1}
-          rotationOffset={topPiping.rotation ?? [0,0,0]}
+          topRotation={topPiping.rotation ?? [0,0,0]}
+          extraRadialOffset={topPiping.extraRadialOffset ?? 0}
+          yOffset={(topPiping.yOffset ?? 0) + (topPiping.userYOffset ?? 0)}
+          flipTop={topPiping.userFlipTop !== undefined ? topPiping.userFlipTop : (topPiping.flipTop ?? false)}
+          swagCount={topPiping.swagCount ?? 0} swagDepth={topPiping.swagDepth ?? 0} swagTilt={topPiping.swagTilt ?? 0.5}
           selected={topPipingSelected} onClick={e => { e.stopPropagation(); onTopPipingClick?.(e); }} />
       )}
       {bottomPiping && (
@@ -308,6 +396,7 @@ export default function CakeTier({
           extraRadialOffset={bottomPiping.extraRadialOffset ?? 0}
           yOffset={(bottomPiping.yOffset ?? 0) + (bottomPiping.userYOffset ?? 0)}
           flipBottom={bottomPiping.userFlipBottom !== undefined ? bottomPiping.userFlipBottom : (bottomPiping.flipBottom ?? true)}
+          swagCount={bottomPiping.swagCount ?? 0} swagDepth={bottomPiping.swagDepth ?? 0} swagTilt={bottomPiping.swagTilt ?? 0.5}
           selected={bottomPipingSelected} onClick={e => { e.stopPropagation(); onBottomPipingClick?.(e); }} />
       )}
     </group>
