@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import * as THREE from 'three';
-import { useGLTF, RoundedBox } from '@react-three/drei';
+import { useGLTF } from '@react-three/drei';
 import { tierShape, pipingPerimeter, rectEdgeRing } from '../geometry/surface.js';
 import { PIPING_FRONT_ANGLE } from '../constants.js';
 
@@ -378,6 +378,27 @@ const FROSTING_MAT = {
   fondant:     { roughness: 0.08, metalness: 0.03 },
 };
 
+// Cake body for a sheet cake: a rounded-RECTANGLE cross-section extruded straight up.
+// Only the 4 vertical corners are rounded (radius r); the top and bottom stay flat and the
+// footprint keeps its full width×depth — unlike drei RoundedBox, which rounds every edge
+// (pillowing the top and shrinking the faces). Spans y ∈ [0, height]. cr=0 → sharp box.
+function buildRoundedPrism(halfW, halfD, height, r) {
+  const cr = Math.max(0, Math.min(r, halfW, halfD));
+  const s = new THREE.Shape();
+  s.moveTo(-halfW + cr, -halfD);
+  s.lineTo(halfW - cr, -halfD);
+  s.quadraticCurveTo(halfW, -halfD, halfW, -halfD + cr);
+  s.lineTo(halfW, halfD - cr);
+  s.quadraticCurveTo(halfW, halfD, halfW - cr, halfD);
+  s.lineTo(-halfW + cr, halfD);
+  s.quadraticCurveTo(-halfW, halfD, -halfW, halfD - cr);
+  s.lineTo(-halfW, -halfD + cr);
+  s.quadraticCurveTo(-halfW, -halfD, -halfW + cr, -halfD);
+  const geo = new THREE.ExtrudeGeometry(s, { depth: height, bevelEnabled: false, curveSegments: 8 });
+  geo.rotateX(-Math.PI / 2);   // extrusion axis (Z) → world Y (up)
+  return geo;
+}
+
 // ── Selection outline ─────────────────────────────────────────────────────────
 function SelectionOutline({ shp, yBase, height }) {
   const geometry = useMemo(() => {
@@ -396,7 +417,7 @@ function SelectionOutline({ shp, yBase, height }) {
 
 export default function CakeTier({
   radius, height, color, yBase,
-  shape = 'round', width, depth,
+  shape = 'round', width, depth, cornerR,
   frostingType = 'buttercream',
   flavour = 'vanilla',
   selected = false,
@@ -411,8 +432,12 @@ export default function CakeTier({
   const topY    = yBase + height;
   const centerY = yBase + height / 2;
   const mat = FROSTING_MAT[frostingType] ?? FROSTING_MAT.buttercream;
-  const shp = useMemo(() => tierShape({ shape, width, depth, radius }), [shape, width, depth, radius]);
+  const shp = useMemo(() => tierShape({ shape, width, depth, radius, cornerR }), [shape, width, depth, radius, cornerR]);
   const isRect = shp.kind === 'rect';
+  const prismGeo = useMemo(
+    () => isRect ? buildRoundedPrism(shp.halfW, shp.halfD, height, shp.cornerR) : null,
+    [isRect, shp, height],
+  );
 
   function handleClick(e) {
     e.stopPropagation();
@@ -476,18 +501,11 @@ export default function CakeTier({
     <group onClick={handleClick}>
       {selected && <SelectionOutline shp={shp} yBase={yBase} height={height} />}
       {isRect ? (
-        // Sharp corners → plain box; a small fillet → RoundedBox. No separate top cap
-        // (a cap reads as a stray "board" on a rectangular cake).
-        shp.cornerR > 0.02 ? (
-          <RoundedBox position={[0, centerY, 0]} args={[shp.halfW * 2, height, shp.halfD * 2]} radius={shp.cornerR} smoothness={4} castShadow receiveShadow>
-            <meshStandardMaterial color={color} roughness={mat.roughness} metalness={mat.metalness} />
-          </RoundedBox>
-        ) : (
-          <mesh position={[0, centerY, 0]} castShadow receiveShadow>
-            <boxGeometry args={[shp.halfW * 2, height, shp.halfD * 2]} />
-            <meshStandardMaterial color={color} roughness={mat.roughness} metalness={mat.metalness} />
-          </mesh>
-        )
+        // Rounded-rect prism: flat top, only the vertical corners rounded, full footprint.
+        // No separate top cap (a cap reads as a stray "board" on a rectangular cake).
+        <mesh geometry={prismGeo} position={[0, yBase, 0]} castShadow receiveShadow>
+          <meshStandardMaterial color={color} roughness={mat.roughness} metalness={mat.metalness} />
+        </mesh>
       ) : (
         <>
           <mesh position={[0, centerY, 0]} castShadow receiveShadow>

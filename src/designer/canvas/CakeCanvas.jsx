@@ -1363,6 +1363,7 @@ function CakeScene({
             shape={tier.shape ?? 'round'}
             width={tier.width}
             depth={tier.depth}
+            cornerR={tier.cornerR}
             frostingType={tier.frostingType}
             selected={selectedTier === i}
             topPiping={tier.topPiping}
@@ -1560,6 +1561,7 @@ function CakeThumbnailScene({ config }) {
           shape={tier.shape ?? 'round'}
           width={tier.width}
           depth={tier.depth}
+          cornerR={tier.cornerR}
           frostingType={tier.frostingType}
           selected={false}
           topPiping={tier.topPiping}
