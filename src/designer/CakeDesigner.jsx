@@ -1127,6 +1127,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
           ...pipingPlacementFromConfig(el.placement_config, isTop),
           ...(altGlbUrl ? { altGlbUrl } : {}),
         };
+        if (!isTop) piping.userYOffset = nextBoardYOffset(0);   // stack above existing board layers
         addPipingLayer(0, zones[0], piping);
       }
     }
@@ -1160,16 +1161,43 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
     return arr?.find(p => p.id === pipingPopupEl?.id) ?? null;
   }
 
+  // ── Layer stacking / overlap avoidance ─────────────────────────────────────
+  // Cream shells are normalised to ~24% of the tier radius (see buildShellGeo); each
+  // layer fills a vertical band of that height. We use bands to stack side/board layers
+  // and to stop a raised side border from climbing into a rim border.
+  const PIPING_SHELL_FRAC = 0.24;
+  function pipingShellHeight(tierIndex, size = 1) {
+    return (canvasConfig.tiers[tierIndex]?.radius ?? 0.35) * PIPING_SHELL_FRAC * size;
+  }
+  // Tier-local vertical band [lo, hi] (0 = base, height = top edge) a layer occupies.
+  function pipingBand(p, tierIndex, zone) {
+    const h  = pipingShellHeight(tierIndex, p.size ?? 1);
+    const yo = (p.yOffset ?? 0) + (p.userYOffset ?? 0);
+    if (zone === 'rim') { const top = (canvasConfig.tiers[tierIndex]?.height ?? 0) + yo; return [top - h, top]; }
+    return [yo, yo + h];
+  }
+  // Default userYOffset for a NEW side/board layer: stack it just above the highest board
+  // layer already on the tier (kept within the wall) so layers don't overlap.
+  function nextBoardYOffset(tierIndex) {
+    const boards = design.tiers[tierIndex]?.bottomPipings ?? [];
+    let top = 0;
+    boards.forEach(p => { const [, hi] = pipingBand(p, tierIndex, 'board'); if (hi > top) top = hi; });
+    const maxLo = (canvasConfig.tiers[tierIndex]?.height ?? 0) - pipingShellHeight(tierIndex, 1);
+    return Math.max(0, Math.min(top, Math.max(0, maxLo)));
+  }
+
   // A fresh piping object for the open element in a zone, at config defaults.
-  function buildRingPiping(zone, overrides = {}) {
+  function buildRingPiping(zone, tierIndex = 0, overrides = {}) {
     const isTop = zone === 'rim';
     const { glbUrl, altGlbUrl } = resolvePipingGlbs(pipingPopupEl);
     const piping = {
       id: pipingPopupEl.id, glbUrl, name: pipingPopupEl.name,
       color: '#f5e6c8', size: 1,
       ...pipingPlacementFromConfig(pipingPopupEl.placement_config, isTop),
-      ...overrides,
     };
+    // New side/board layers stack above any existing board piping instead of overlapping.
+    if (!isTop) piping.userYOffset = nextBoardYOffset(tierIndex);
+    Object.assign(piping, overrides);
     if (altGlbUrl) piping.altGlbUrl = altGlbUrl;   // patterns resolve B from a referenced block
     return piping;
   }
@@ -1182,7 +1210,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
     if (existing) {
       updatePipingLayer(tierIndex, zone, existing.layerId, mutate);
     } else {
-      const next = mutate(buildRingPiping(zone));
+      const next = mutate(buildRingPiping(zone, tierIndex));
       if (next) addPipingLayer(tierIndex, zone, next);
     }
   }
@@ -1204,14 +1232,18 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
   function handlePipingBoardYOffsetChange(tierIndex, v) {
     const cur = design.tiers[tierIndex]?.bottomPipings?.find(p => p.id === pipingPopupEl?.id);
     if (!cur) return;
-    // Cap the rise so the cream top stops at the cake top. The shell sits at
-    // yBase + baseYOffset + userYOffset and, after size-normalisation, its scaled
-    // height is radius * 0.24 * size (see BottomPipingRing).
+    // Cap the rise so the cream top stops at the cake top — or, if a rim border is on this
+    // tier, just below that rim band so the raised side border can't overlap it.
     const size        = cur.size ?? 1;
     const baseYOffset = cur.yOffset ?? 0;
-    const { radius, height } = canvasConfig.tiers[tierIndex];
-    const shellHeight = radius * 0.24 * size;
-    const maxOffset   = height - baseYOffset - shellHeight;
+    const { height }  = canvasConfig.tiers[tierIndex];
+    const shellHeight = pipingShellHeight(tierIndex, size);
+    let ceiling = height;
+    (design.tiers[tierIndex]?.topPipings ?? []).forEach(p => {
+      const [lo] = pipingBand(p, tierIndex, 'rim');
+      if (lo < ceiling) ceiling = lo;
+    });
+    const maxOffset   = ceiling - baseYOffset - shellHeight;
     const clamped = Math.min(Math.max(0, v), Math.max(0, maxOffset));
     updatePipingLayer(tierIndex, 'board', cur.layerId, p => ({ ...p, userYOffset: clamped }));
   }
@@ -1273,7 +1305,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
       const existing = ringPiping(tierIndex, zone);
       if (existing) removePipingLayer(tierIndex, zone, existing.layerId);
     } else {
-      addPipingLayer(tierIndex, zone, buildRingPiping(zone));
+      addPipingLayer(tierIndex, zone, buildRingPiping(zone, tierIndex));
     }
   }
 
@@ -2634,12 +2666,24 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               // tier's rim from the top tier down, then the board (bottom tier only) last.
               // Each is independently editable; the checkbox beside its preview adds/removes
               // it, and touching any control auto-adds it.
+              // A dual-zone element (rim + board) can't also sit on a rim already taken by
+              // another piping — offer it only sidewise (board) in that case.
+              const allowsBoth = allowed.includes('rim') && allowed.includes('board');
+              let rimGated = false;
               const candidates = [];
               for (let i = design.tiers.length - 1; i >= 0; i--) {
-                if (allowed.includes('rim')) candidates.push({ tierIndex: i, zone: 'rim', label: multi ? `${TIER_LABELS[i]} Rim` : 'Rim' });
+                if (!allowed.includes('rim')) continue;
+                const rimTaken = (design.tiers[i].topPipings ?? []).some(pp => pp.id !== pipingPopupEl.id);
+                if (allowsBoth && rimTaken) { rimGated = true; continue; }
+                candidates.push({ tierIndex: i, zone: 'rim', label: multi ? `${TIER_LABELS[i]} Rim` : 'Rim' });
               }
               if (allowed.includes('board')) candidates.push({ tierIndex: 0, zone: 'board', label: multi ? `${TIER_LABELS[0]} Board` : 'Board' });
               return (<>
+              {rimGated && (
+                <div style={{ borderTop: '1px solid #f5eaed', paddingTop: 9, fontSize: 9.5, color: '#b29aa2', fontFamily: "'Quicksand',sans-serif", lineHeight: 1.45 }}>
+                  The rim already has piping — this style is offered on the side only so they don't overlap.
+                </div>
+              )}
               {multi && allowed.includes('board') && (
                 <div style={{ borderTop: '1px solid #f5eaed', paddingTop: 9, fontSize: 9.5, color: '#b29aa2', fontFamily: "'Quicksand',sans-serif", lineHeight: 1.45 }}>
                   Board is on the bottom tier only — upper tiers rest on the rim of the tier below.
