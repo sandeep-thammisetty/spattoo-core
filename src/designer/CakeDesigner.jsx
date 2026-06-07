@@ -120,6 +120,56 @@ function pipingPlacementChanged(current, next, isTop) {
 
 const TIER_LABELS = ['Bottom Tier', '2nd Tier', '3rd Tier', 'Top Tier'];
 
+// ── Size dial ─────────────────────────────────────────────────────────────────
+// Compact radial size control: a 280° arc whose band tapers thin → thick (= small →
+// large), so it reads like a piping nozzle widening. Drag or tap anywhere on the arc;
+// the filled portion shows the current value and the centre shows the number. Replaces
+// the full-width linear slider so Color + Size fit a short row and the popup stays tight.
+function SizeDial({ size = 1, min = 0.5, max = 2, step = 0.05, onChange }) {
+  const CX = 24, CY = 24, R_IN = 12, W_MIN = 2, W_MAX = 8;
+  const A_START = -140 * Math.PI / 180;   // lower-left (thin end)
+  const A_SWEEP =  280 * Math.PI / 180;   // sweeps up over the top to lower-right (gap at bottom)
+  const t = Math.max(0, Math.min(1, (size - min) / (max - min)));
+
+  const angOf = u => A_START + u * A_SWEEP;
+  const pt    = (u, r) => [CX + r * Math.sin(angOf(u)), CY - r * Math.cos(angOf(u))];
+  // Filled band from uA→uB: inner edge at R_IN, outer edge growing with u (the taper).
+  const band = (uA, uB) => {
+    const N = Math.max(2, Math.round(40 * Math.abs(uB - uA)));
+    const seg = [];
+    for (let i = 0; i <= N; i++) { const u = uA + (uB - uA) * i / N; const [x, y] = pt(u, R_IN); seg.push(`${i ? 'L' : 'M'}${x.toFixed(2)} ${y.toFixed(2)}`); }
+    for (let i = 0; i <= N; i++) { const u = uB - (uB - uA) * i / N; const [x, y] = pt(u, R_IN + W_MIN + (W_MAX - W_MIN) * u); seg.push(`L${x.toFixed(2)} ${y.toFixed(2)}`); }
+    return seg.join(' ') + ' Z';
+  };
+  const knob = pt(t, R_IN + (W_MIN + (W_MAX - W_MIN) * t) / 2);
+
+  const setFromEvent = (e) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const px = (e.clientX - rect.left) / rect.width  * 48;
+    const py = (e.clientY - rect.top)  / rect.height * 48;
+    const a  = Math.atan2(px - CX, CY - py);          // angle from top, clockwise
+    const u  = Math.max(0, Math.min(1, (a - A_START) / A_SWEEP));
+    onChange?.(+(min + Math.round(u * (max - min) / step) * step).toFixed(2));
+  };
+
+  return (
+    <div style={{ width: 46, height: 46, position: 'relative', flexShrink: 0, cursor: 'pointer', touchAction: 'none', userSelect: 'none' }}
+      onPointerDown={e => { e.stopPropagation(); e.currentTarget.setPointerCapture(e.pointerId); setFromEvent(e); }}
+      onPointerMove={e => { if (!e.currentTarget.hasPointerCapture(e.pointerId)) return; e.stopPropagation(); setFromEvent(e); }}
+      onPointerUp={e => { e.stopPropagation(); e.currentTarget.releasePointerCapture(e.pointerId); }}
+      onPointerCancel={e => e.currentTarget.releasePointerCapture(e.pointerId)}>
+      <svg viewBox="0 0 48 48" width={46} height={46} style={{ display: 'block', pointerEvents: 'none' }}>
+        <path d={band(0, 1)} fill="#e6e0e3" />
+        {t > 0.001 && <path d={band(0, t)} fill="#9b5268" />}
+        <circle cx={knob[0]} cy={knob[1]} r={4.5} fill="#fff" stroke="#9b5268" strokeWidth={2} />
+      </svg>
+      <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: '#9b5268', fontFamily: "'Quicksand',sans-serif", pointerEvents: 'none' }}>
+        {size.toFixed(1)}
+      </span>
+    </div>
+  );
+}
+
 // ── Color picker (react-colorful) ─────────────────────────────────────────────
 function ColorWheel({ color, onChange }) {
   // Common cake piping colour presets
@@ -691,15 +741,6 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
   const [tmplSearch,      setTmplSearch]      = useState('');
   const [pipingPopupOpen,    setPipingPopupOpen]    = useState(false);
   const [pipingPopupEl,     setPipingPopupEl]     = useState(null);
-  const [pipingRimColor,    setPipingRimColor]    = useState('#f5e6c8');
-  const [pipingRimSize,     setPipingRimSize]     = useState(1.0);
-  const [pipingBoardColor,  setPipingBoardColor]  = useState('#f5e6c8');
-  const [pipingBoardSize,   setPipingBoardSize]   = useState(1.0);
-  const [pipingBoardYOffset,    setPipingBoardYOffset]    = useState(0);
-  const [pipingBoardFlipBottom, setPipingBoardFlipBottom] = useState(null); // null = use element default
-  // Ring/Single choice made BEFORE the piping is applied to a tier, keyed by zone
-  // ('rim'/'board'). Lets the user decide up front; consumed when they add to the cake.
-  const [pipingPendingArr,      setPipingPendingArr]      = useState({});
   const [activeElementTypeIds, setActiveElementTypeIds] = useState(new Set());
 
   // Capabilities fetched eagerly on mount so edit controls work
@@ -1061,21 +1102,9 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
   }
 
   async function openPipingPopup(el) {
-    let rimColor = '#f5e6c8', rimSize = 1.0, boardColor = '#f5e6c8', boardSize = 1.0, boardYOffset = 0, boardFlip = null;
-    for (const tier of design.tiers) {
-      if (tier.topPiping?.id    === el.id) { rimColor   = tier.topPiping.color    ?? rimColor;   rimSize   = tier.topPiping.size    ?? rimSize;   }
-      if (tier.bottomPiping?.id === el.id) { boardColor = tier.bottomPiping.color ?? boardColor; boardSize = tier.bottomPiping.size ?? boardSize; boardYOffset = tier.bottomPiping.userYOffset ?? 0; boardFlip = tier.bottomPiping.userFlipBottom ?? null; }
-    }
     setPipingPopupEl(el);
-    setPipingRimColor(rimColor);
-    setPipingRimSize(rimSize);
-    setPipingBoardColor(boardColor);
-    setPipingBoardSize(boardSize);
-    setPipingBoardYOffset(boardYOffset);
-    setPipingBoardFlipBottom(boardFlip);
-    setPipingPendingArr({});   // fresh element → fall back to its configured default
     // If the element supports exactly one zone there's nothing to choose — add it to the
-    // cake by default (bottom tier). Multi-zone elements stay manual via the checkboxes.
+    // bottom tier by default. Multi-zone elements stay manual via each ring's toggle.
     const zones = (el.allowed_zones ?? []).filter(z => z === 'rim' || z === 'board');
     if (zones.length === 1) {
       const isTop   = zones[0] === 'rim';
@@ -1084,13 +1113,11 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
         const { glbUrl, altGlbUrl } = resolvePipingGlbs(el);
         const piping = {
           id: el.id, glbUrl, name: el.name,
-          color: isTop ? rimColor : boardColor,
-          size:  isTop ? rimSize  : boardSize,
+          color: '#f5e6c8', size: 1,
           ...pipingPlacementFromConfig(el.placement_config, isTop),
           ...(altGlbUrl ? { altGlbUrl } : {}),
         };
-        if (isTop) setTopPiping(0, piping);
-        else       setBottomPiping(0, piping);
+        (isTop ? setTopPiping : setBottomPiping)(0, piping);
       }
     }
     closeAllPopups();
@@ -1099,109 +1126,75 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
     setSelectedEl(null);
   }
 
-  function handlePipingColorChange(zone, c) {
-    if (zone === 'rim') {
-      setPipingRimColor(c);
-      design.tiers.forEach((tier, i) => {
-        if (tier.topPiping?.id === pipingPopupEl?.id) setTopPiping(i, { ...tier.topPiping, color: c });
-      });
-    } else {
-      setPipingBoardColor(c);
-      design.tiers.forEach((tier, i) => {
-        if (tier.bottomPiping?.id === pipingPopupEl?.id) setBottomPiping(i, { ...tier.bottomPiping, color: c });
-      });
-    }
+  // ── Ring-scoped edits ──────────────────────────────────────────────────────
+  // Every appearance control targets ONE physical ring — a specific (tier, zone)
+  // pair — so each ring (board, each tier's rim) is tuned independently.
+
+  // The applied piping for a ring, or null when it isn't on the cake yet.
+  function ringPiping(tierIndex, zone) {
+    const p = zone === 'rim' ? design.tiers[tierIndex]?.topPiping : design.tiers[tierIndex]?.bottomPiping;
+    return p?.id === pipingPopupEl?.id ? p : null;
   }
 
-  function handlePipingSizeChange(zone, v) {
-    if (zone === 'rim') {
-      setPipingRimSize(v);
-      design.tiers.forEach((tier, i) => {
-        if (tier.topPiping?.id === pipingPopupEl?.id) setTopPiping(i, { ...tier.topPiping, size: v });
-      });
-    } else {
-      setPipingBoardSize(v);
-      design.tiers.forEach((tier, i) => {
-        if (tier.bottomPiping?.id === pipingPopupEl?.id) setBottomPiping(i, { ...tier.bottomPiping, size: v });
-      });
-    }
+  // A fresh piping object for the open element in a zone, at config defaults.
+  function buildRingPiping(zone, overrides = {}) {
+    const isTop = zone === 'rim';
+    const { glbUrl, altGlbUrl } = resolvePipingGlbs(pipingPopupEl);
+    const piping = {
+      id: pipingPopupEl.id, glbUrl, name: pipingPopupEl.name,
+      color: '#f5e6c8', size: 1,
+      ...pipingPlacementFromConfig(pipingPopupEl.placement_config, isTop),
+      ...overrides,
+    };
+    if (altGlbUrl) piping.altGlbUrl = altGlbUrl;   // patterns resolve B from a referenced block
+    return piping;
   }
 
-  function handlePipingBoardYOffsetChange(v) {
-    // Cap the rise so the top of the cream stops when it reaches the top of the cake.
-    // The piping shell sits at yBase + baseYOffset + userYOffset and, after the ring's
-    // size-normalisation, its scaled height is radius * 0.24 * size (see BottomPipingRing).
-    // So the top touches the cake top when userYOffset = height - baseYOffset - shellHeight.
-    let maxOffset = Infinity;
-    design.tiers.forEach((tier, i) => {
-      if (tier.bottomPiping?.id === pipingPopupEl?.id) {
-        const size        = tier.bottomPiping.size ?? 1;
-        const baseYOffset = tier.bottomPiping.yOffset ?? 0;
-        // Resolved radius/height (design.tiers may omit them — defaults live in canvasConfig).
-        const { radius, height } = canvasConfig.tiers[i];
-        const shellHeight = radius * 0.24 * size;
-        maxOffset = Math.min(maxOffset, height - baseYOffset - shellHeight);
-      }
-    });
+  // Mutate a ring, auto-applying it (at defaults) first if it isn't on the cake yet —
+  // so color / size / arrangement are live even before the ring is explicitly added.
+  function updateRing(tierIndex, zone, mutate) {
+    const setFn = zone === 'rim' ? setTopPiping : setBottomPiping;
+    const base = ringPiping(tierIndex, zone) ?? buildRingPiping(zone);
+    const next = mutate(base);
+    if (next) setFn(tierIndex, next);
+  }
+
+  function handlePipingColorChange(tierIndex, zone, c) {
+    updateRing(tierIndex, zone, p => ({ ...p, color: c }));
+  }
+
+  function handlePipingSizeChange(tierIndex, zone, v) {
+    updateRing(tierIndex, zone, p => ({ ...p, size: v }));
+  }
+
+  function handlePipingBoardYOffsetChange(tierIndex, v) {
+    const cur = design.tiers[tierIndex]?.bottomPiping;
+    if (!cur || cur.id !== pipingPopupEl?.id) return;
+    // Cap the rise so the cream top stops at the cake top. The shell sits at
+    // yBase + baseYOffset + userYOffset and, after size-normalisation, its scaled
+    // height is radius * 0.24 * size (see BottomPipingRing).
+    const size        = cur.size ?? 1;
+    const baseYOffset = cur.yOffset ?? 0;
+    const { radius, height } = canvasConfig.tiers[tierIndex];
+    const shellHeight = radius * 0.24 * size;
+    const maxOffset   = height - baseYOffset - shellHeight;
     const clamped = Math.min(Math.max(0, v), Math.max(0, maxOffset));
-    setPipingBoardYOffset(clamped);
-    design.tiers.forEach((tier, i) => {
-      if (tier.bottomPiping?.id === pipingPopupEl?.id)
-        setBottomPiping(i, { ...tier.bottomPiping, userYOffset: clamped });
-    });
+    setBottomPiping(tierIndex, { ...cur, userYOffset: clamped });
   }
 
-  function handlePipingBoardFlipChange() {
+  function handlePipingBoardFlipChange(tierIndex) {
+    const cur = design.tiers[tierIndex]?.bottomPiping;
+    if (!cur || cur.id !== pipingPopupEl?.id) return;
     const defaultFlip = pipingPopupEl?.placement_config?.bottom_flip ?? true;
-    const current = pipingBoardFlipBottom !== null ? pipingBoardFlipBottom : defaultFlip;
-    const next = !current;
-    setPipingBoardFlipBottom(next);
-    design.tiers.forEach((tier, i) => {
-      if (tier.bottomPiping?.id === pipingPopupEl?.id)
-        setBottomPiping(i, { ...tier.bottomPiping, userFlipBottom: next });
-    });
+    const current = cur.userFlipBottom != null ? cur.userFlipBottom : defaultFlip;
+    setBottomPiping(tierIndex, { ...cur, userFlipBottom: !current });
   }
 
-  // ── Arrangement (ring vs single instances) ────────────────────────────────
-  // Apply a mutation to every tier whose piping in this zone matches the open element.
-  function updatePipingInZone(zone, mutate) {
-    const isTop = zone === 'rim';
-    const setFn = isTop ? setTopPiping : setBottomPiping;
-    design.tiers.forEach((tier, i) => {
-      const p = isTop ? tier.topPiping : tier.bottomPiping;
-      if (p?.id !== pipingPopupEl?.id) return;
-      const next = mutate(p, i);
-      if (next) setFn(i, next);
-    });
-  }
-
-  // Current arrangement for the open element in a zone: an applied tier's live value
-  // wins; before it's applied, the user's pending pick; else the configured default.
-  function pipingArrangementFor(zone) {
-    const isTop = zone === 'rim';
-    for (const tier of design.tiers) {
-      const p = isTop ? tier.topPiping : tier.bottomPiping;
-      if (p?.id === pipingPopupEl?.id && p.arrangement) return p.arrangement;
-    }
-    return pipingPendingArr[zone] ?? pipingDefaultArrangement(pipingPopupEl?.placement_config, isTop);
-  }
-
-  // Set a piping object to a given arrangement, seeding/dropping instances accordingly.
-  function withArrangement(piping, mode, pc, isTop) {
-    if (mode === 'single') {
-      const seedAngle = (isTop ? pc?.top_single_angle : pc?.bottom_single_angle) ?? PIPING_FRONT_ANGLE;
-      const instances = piping.instances?.length ? piping.instances : [{ id: Date.now(), angle: seedAngle }];
-      return { ...piping, arrangement: 'single', instances };
-    }
-    const { instances, ...rest } = piping;
-    return { ...rest, arrangement: 'ring' };
-  }
-
-  function handlePipingArrangementChange(zone, mode) {
+  function handlePipingArrangementChange(tierIndex, zone, mode) {
     const isTop = zone === 'rim';
     const seedAngle = (isTop ? pipingPopupEl?.placement_config?.top_single_angle
                              : pipingPopupEl?.placement_config?.bottom_single_angle) ?? PIPING_FRONT_ANGLE;
-    updatePipingInZone(zone, (p) => {
+    updateRing(tierIndex, zone, (p) => {
       if (mode === 'single') {
         const instances = p.instances?.length ? p.instances : [{ id: Date.now(), angle: seedAngle }];
         return { ...p, arrangement: 'single', instances };
@@ -1211,57 +1204,38 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
     });
   }
 
-  function handlePipingAddInstance(zone) {
+  function handlePipingAddInstance(tierIndex, zone) {
     const isTop = zone === 'rim';
     const max = (isTop ? pipingPopupEl?.placement_config?.top_single_max
                        : pipingPopupEl?.placement_config?.bottom_single_max) ?? 12;
-    updatePipingInZone(zone, (p, i) => {
+    updateRing(tierIndex, zone, (p) => {
       const list = p.instances ?? [];
       if (list.length >= max) return null;
       const last = list[list.length - 1];
       const angle = ((last?.angle ?? 0) + Math.PI / 6) % (Math.PI * 2);   // +30° so it's visible
-      return { ...p, arrangement: 'single', instances: [...list, { id: Date.now() + i, angle }] };
+      return { ...p, arrangement: 'single', instances: [...list, { id: Date.now(), angle }] };
     });
   }
 
-  // Per-instance ops are index-based so they stay in sync across every tier sharing
-  // this piping (instance ids differ per tier, but the arrays are parallel by index).
-  function handlePipingSetInstanceAngle(zone, index, angle) {
-    updatePipingInZone(zone, (p) => ({
+  function handlePipingSetInstanceAngle(tierIndex, zone, index, angle) {
+    updateRing(tierIndex, zone, (p) => ({
       ...p,
       instances: (p.instances ?? []).map((x, idx) => idx === index ? { ...x, angle } : x),
     }));
   }
 
-  function handlePipingRemoveInstance(zone, index) {
-    updatePipingInZone(zone, (p) => {
+  function handlePipingRemoveInstance(tierIndex, zone, index) {
+    updateRing(tierIndex, zone, (p) => {
       const next = (p.instances ?? []).filter((_, idx) => idx !== index);
       // Single mode is never empty — re-seed one piece at the front if the last was removed.
       return { ...p, instances: next.length ? next : [{ id: Date.now(), angle: PIPING_FRONT_ANGLE }] };
     });
   }
 
+  // Add (at config defaults) or remove a ring from the cake.
   function togglePipingZone(tierIndex, zone, isOn) {
-    const isTop = zone === 'rim';
-    if (isOn) {
-      if (isTop) setTopPiping(tierIndex, null);
-      else       setBottomPiping(tierIndex, null);
-      return;
-    }
-    const { glbUrl, altGlbUrl } = resolvePipingGlbs(pipingPopupEl);
-    let piping = {
-      id: pipingPopupEl.id, glbUrl, name: pipingPopupEl.name,
-      color: isTop ? pipingRimColor : pipingBoardColor,
-      size:  isTop ? pipingRimSize  : pipingBoardSize,
-      ...pipingPlacementFromConfig(pipingPopupEl.placement_config, isTop),
-    };
-    if (altGlbUrl) piping.altGlbUrl = altGlbUrl;   // patterns resolve B from a referenced block
-    // Honor the user's up-front Ring/Single pick (if they chose before adding).
-    const pending = pipingPendingArr[zone];
-    if (pending && pending !== piping.arrangement)
-      piping = withArrangement(piping, pending, pipingPopupEl.placement_config, isTop);
-    if (isTop) setTopPiping(tierIndex, piping);
-    else       setBottomPiping(tierIndex, piping);
+    const setFn = zone === 'rim' ? setTopPiping : setBottomPiping;
+    setFn(tierIndex, isOn ? null : buildRingPiping(zone));
   }
 
   async function openTemplates() {
@@ -2253,6 +2227,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         {/* ── Canvas area ── */}
         <div style={{ ...s.canvasArea, ...(isMobile ? { order: -1, overflow: 'hidden' } : {}) }}>
 
+          {/* Shrink the live canvas to the left when the piping strip is open, so the
+              cake stays fully visible beside it (the Canvas is absolute inset:0 of this div). */}
+          <div style={{ position: 'absolute', inset: 0, right: pipingPopupOpen ? 172 : 0, transition: 'right 0.18s ease' }}>
           <Suspense fallback={<div style={s.loading}>Loading 3D cake...</div>}>
             <CakeCanvas
               config={canvasConfig}
@@ -2286,6 +2263,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               cameraPosition={isMobile ? CAMERA_POSITION_MOBILE : CAMERA_POSITION}
             />
           </Suspense>
+          </div>
 
           {/* ── Sticker & topper toolbars (DOM overlays — desktop only) ── */}
           {!isMobile && selectedEl?.type === 'sticker' && !selectedStickerIsFauxBall && (
@@ -2584,44 +2562,50 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
           {/* ── Cream Piping popup ── */}
           {pipingPopupOpen && pipingPopupEl && (
-            <div style={isMobile ? s.pipingPopupMobile : s.pipingPopup}>
-              {/* Header: thumbnail + style name + close */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                <div style={{ width: 36, height: 36, borderRadius: 8, overflow: 'hidden', border: '1.5px solid #f0dce3', background: '#fff', flexShrink: 0 }}>
-                  {pipingPopupEl.thumbnail_url && <img src={cfImg(pipingPopupEl.thumbnail_url, 36, 36, cfAssetsBase)} alt={pipingPopupEl.name} width={36} height={36} decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
+            <div style={s.pipingPopup}>
+              {/* Header: thumbnail + style name + close (compact for the narrow strip) */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                <div style={{ width: 28, height: 28, borderRadius: 7, overflow: 'hidden', border: '1.5px solid #f0dce3', background: '#fff', flexShrink: 0 }}>
+                  {pipingPopupEl.thumbnail_url && <img src={cfImg(pipingPopupEl.thumbnail_url, 28, 28, cfAssetsBase)} alt={pipingPopupEl.name} width={28} height={28} decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
                 </div>
-                <span style={{ fontSize: 12, fontWeight: 700, color: '#1a1a1a', flex: 1, fontFamily: "'Quicksand',sans-serif" }}>{pipingPopupEl.name}</span>
-                <button style={s.iconBtn} onClick={() => setPipingPopupOpen(false)}>✕</button>
+                <span style={{ fontSize: 10.5, fontWeight: 700, color: '#1a1a1a', flex: 1, minWidth: 0, lineHeight: 1.2, fontFamily: "'Quicksand',sans-serif" }}>{pipingPopupEl.name}</span>
+                <button style={{ ...s.iconBtn, width: 24, height: 24, flexShrink: 0 }} onClick={() => setPipingPopupOpen(false)}>✕</button>
               </div>
 
-              {/* Rim section */}
-              {[
-                { zone: 'rim',   label: 'Rim',   color: pipingRimColor,   size: pipingRimSize,   hasZone: t => t.topPiping?.id    === pipingPopupEl.id },
-                { zone: 'board', label: 'Board', color: pipingBoardColor, size: pipingBoardSize, hasZone: t => t.bottomPiping?.id === pipingPopupEl.id },
-              ].filter(({ zone }) => {
-                const allowed = pipingPopupEl.allowed_zones;
-                if (!allowed?.length) return true; // fallback: show all if unknown
-                return allowed.includes(zone);
-              }).map(({ zone, label, color, size, hasZone }) => {
-                const pct = ((size - 0.5) / 1.5) * 100;
+              {(() => {
+              const allowed = pipingPopupEl.allowed_zones?.length ? pipingPopupEl.allowed_zones : ['rim', 'board'];
+              const multi   = design.tiers.length > 1;
+              // One card per candidate ring, ordered to mirror the cake top → bottom: each
+              // tier's rim from the top tier down, then the board (bottom tier only) last.
+              // Each is independently editable; the checkbox beside its preview adds/removes
+              // it, and touching any control auto-adds it.
+              const candidates = [];
+              for (let i = design.tiers.length - 1; i >= 0; i--) {
+                if (allowed.includes('rim')) candidates.push({ tierIndex: i, zone: 'rim', label: multi ? `${TIER_LABELS[i]} Rim` : 'Rim' });
+              }
+              if (allowed.includes('board')) candidates.push({ tierIndex: 0, zone: 'board', label: multi ? `${TIER_LABELS[0]} Board` : 'Board' });
+              return (<>
+              {multi && allowed.includes('board') && (
+                <div style={{ borderTop: '1px solid #f5eaed', paddingTop: 9, fontSize: 9.5, color: '#b29aa2', fontFamily: "'Quicksand',sans-serif", lineHeight: 1.45 }}>
+                  Board is on the bottom tier only — upper tiers rest on the rim of the tier below.
+                </div>
+              )}
+              {candidates.map(({ tierIndex, zone, label }) => {
                 const isTopZone     = zone === 'rim';
+                const applied       = ringPiping(tierIndex, zone);
+                const p             = applied ?? { color: '#f5e6c8', size: 1, ...pipingPlacementFromConfig(pipingPopupEl.placement_config, isTopZone) };
+                const color         = p.color ?? '#f5e6c8';
+                const size          = p.size  ?? 1;
                 const pc            = pipingPopupEl.placement_config ?? {};
                 const allowedArr    = pipingAllowedArrangements(pc, isTopZone);
                 const arrAdjustable = allowedArr.length > 1;   // user can switch only when both allowed
-                const arrangement   = pipingArrangementFor(zone);
+                const arrangement   = p.arrangement ?? pipingDefaultArrangement(pc, isTopZone);
                 const maxInstances  = (isTopZone ? pc.top_single_max : pc.bottom_single_max) ?? 12;
-                const zoneApplied   = design.tiers.some(hasZone);
-                const zoneInstances = (() => {
-                  for (const tier of design.tiers) {
-                    const p = isTopZone ? tier.topPiping : tier.bottomPiping;
-                    if (p?.id === pipingPopupEl.id) return p.instances ?? [];
-                  }
-                  return [];
-                })();
-                // Config-derived placement for the live preview. Reflect the user's board
-                // flip override so the preview matches what they'll get.
+                const zoneInstances = p.instances ?? [];
+                // Config-derived placement for the live preview, with this ring's own board
+                // flip override applied so the preview matches what's on the cake.
                 const previewPlacement = pipingPlacementFromConfig(pipingPopupEl.placement_config, isTopZone);
-                if (!isTopZone && pipingBoardFlipBottom !== null) previewPlacement.flipBottom = pipingBoardFlipBottom;
+                if (!isTopZone && p.userFlipBottom != null) previewPlacement.flipBottom = p.userFlipBottom;
                 // A "piping pattern" element carries no image_url of its own — its A/B GLBs
                 // live in the cream_piping blocks it references. Resolve them the same way
                 // the real cake-apply path does (resolvePipingGlbs) so the preview matches.
@@ -2629,39 +2613,46 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 if (previewAltGlb) previewPlacement.altGlbUrl = previewAltGlb;
                 // Shared row styling so every control lines up; section headers add hairlines.
                 const lbl     = { fontSize: 10, color: '#888', fontFamily: "'Quicksand',sans-serif", fontWeight: 600, flexShrink: 0 };
+                const cap     = { fontSize: 8.5, fontWeight: 700, color: '#b29aa2', fontFamily: "'Quicksand',sans-serif", textTransform: 'uppercase', letterSpacing: 0.5 };
                 const secRow   = { display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 };
                 const secTitle = { fontSize: 9, fontWeight: 700, color: '#c39aa7', fontFamily: "'Quicksand',sans-serif", textTransform: 'uppercase', letterSpacing: 0.7, flexShrink: 0, whiteSpace: 'nowrap' };
                 const hair     = { flex: 1, height: 1, background: '#f2e6ea' };
                 const flipAdj  = zone === 'board' && pipingPopupEl.placement_config?.bottom_flip_adjustable;
                 const yAdj     = zone === 'board' && pipingPopupEl.placement_config?.bottom_y_adjustable;
+                const boardY   = p.userYOffset ?? 0;
                 return (
-                  <div key={zone} style={{ borderTop: '1px solid #f5eaed', paddingTop: 10, paddingBottom: 4 }}>
-                    {/* ── Placement: preview + zone toggle + Ring/Single ── */}
-                    <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-                      <div style={{ width: 80, height: 80, borderRadius: 10, overflow: 'hidden', border: '1.5px solid #f0dce3', background: '#faf3f6', flexShrink: 0 }}>
-                        <PipingPreview zone={zone} glbUrl={previewGlb} size={size}
-                          placement={previewPlacement} arrangement={arrangement} instances={zoneInstances} />
-                      </div>
-                      <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                        <span style={{ fontSize: 11, fontWeight: 700, color: '#9b5268', fontFamily: "'Quicksand',sans-serif", textTransform: 'uppercase', letterSpacing: 0.6 }}>{label}</span>
-                        {/* per-tier checkboxes (multi-tier) or single "Add to cake" toggle */}
-                        {design.tiers.length > 1 ? (
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                            {design.tiers.map((tier, i) => (
-                              <label key={i} style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 11, color: '#444', fontFamily: "'Quicksand',sans-serif", fontWeight: 600 }}>
-                                <input type="checkbox" checked={hasZone(tier)} onChange={() => togglePipingZone(i, zone, hasZone(tier))}
-                                  style={{ accentColor: '#9b5268', width: 13, height: 13, cursor: 'pointer' }} />
-                                {TIER_LABELS[i]}
-                              </label>
-                            ))}
+                  <div key={`${zone}-${tierIndex}`} style={{ borderTop: '1px solid #f5eaed', paddingTop: 10, paddingBottom: 4 }}>
+                    {/* ── Full-width preview with the checkbox floating in its corner ── */}
+                    <div style={{ position: 'relative', width: '100%', height: 104, borderRadius: 10, overflow: 'hidden', border: `1.5px solid ${applied ? '#9b5268' : '#cdccd3'}`, background: '#cfcdd6' }}>
+                      <PipingPreview zone={zone} glbUrl={previewGlb} color={color} size={size}
+                        tiers={canvasConfig.tiers} tierIndex={tierIndex}
+                        placement={previewPlacement} arrangement={arrangement} instances={zoneInstances} />
+                      <label title={applied ? 'Remove from cake' : 'Add to cake'}
+                        onPointerDown={e => e.stopPropagation()}
+                        style={{ position: 'absolute', top: 5, left: 5, width: 22, height: 22, borderRadius: 6, background: 'rgba(255,255,255,0.92)', boxShadow: '0 1px 3px rgba(0,0,0,0.28)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+                        <input type="checkbox" checked={!!applied}
+                          onChange={() => togglePipingZone(tierIndex, zone, !!applied)}
+                          style={{ accentColor: '#9b5268', width: 15, height: 15, cursor: 'pointer', margin: 0 }} />
+                      </label>
+                    </div>
+                    {/* ring name */}
+                    <span style={{ display: 'block', marginTop: 7, fontSize: 11, fontWeight: 700, color: '#9b5268', fontFamily: "'Quicksand',sans-serif", textTransform: 'uppercase', letterSpacing: 0.5, lineHeight: 1.25, textAlign: 'center' }}>{label}</span>
+                    {/* Color + Size */}
+                    <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'center', gap: 22, marginTop: 8 }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                        <div style={{ position: 'relative', width: 26, height: 26, flexShrink: 0, cursor: 'pointer' }}>
+                          <div style={{ width: 26, height: 26, borderRadius: '50%', background: 'conic-gradient(red,yellow,lime,aqua,blue,magenta,red)', padding: 4, pointerEvents: 'none' }}>
+                            <div style={{ width: '100%', height: '100%', borderRadius: '50%', background: color }} />
                           </div>
-                        ) : (
-                          <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 11, color: '#444', fontFamily: "'Quicksand',sans-serif", fontWeight: 600 }}>
-                            <input type="checkbox" checked={hasZone(design.tiers[0])} onChange={() => togglePipingZone(0, zone, hasZone(design.tiers[0]))}
-                              style={{ accentColor: '#9b5268', width: 13, height: 13, cursor: 'pointer' }} />
-                            Add to cake
-                          </label>
-                        )}
+                          <input type="color" value={color}
+                            onChange={e => handlePipingColorChange(tierIndex, zone, e.target.value)}
+                            style={{ position: 'absolute', inset: 0, opacity: 0, width: '100%', height: '100%', cursor: 'pointer', border: 'none', padding: 0 }} />
+                        </div>
+                        <span style={cap}>Color</span>
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
+                        <SizeDial size={size} onChange={v => handlePipingSizeChange(tierIndex, zone, v)} />
+                        <span style={cap}>Size</span>
                       </div>
                     </div>
 
@@ -2672,11 +2663,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                           const on = arrangement === mode;
                           return (
                             <button key={mode}
-                              onPointerDown={e => {
-                                e.stopPropagation();
-                                if (zoneApplied) handlePipingArrangementChange(zone, mode);
-                                else setPipingPendingArr(prev => ({ ...prev, [zone]: mode }));
-                              }}
+                              onPointerDown={e => { e.stopPropagation(); handlePipingArrangementChange(tierIndex, zone, mode); }}
                               style={{ flex: 1, fontSize: 11, padding: '5px 0', borderRadius: 6, border: `1.5px solid ${on ? '#9b5268' : '#e0d0d5'}`, background: on ? '#9b5268' : '#fff', color: on ? '#fff' : '#9b5268', cursor: 'pointer', fontWeight: 700, fontFamily: "'Quicksand',sans-serif", textTransform: 'capitalize' }}>
                               {mode}
                             </button>
@@ -2685,58 +2672,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                       </div>
                     )}
 
-                    {/* ── Appearance: colour + size on one row ── */}
-                    <div style={secRow}><span style={secTitle}>Appearance</span><div style={hair} /></div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginTop: 8 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-                        <span style={lbl}>Color</span>
-                        <div style={{ position: 'relative', width: 26, height: 26, flexShrink: 0, cursor: 'pointer' }}>
-                          <div style={{ width: 26, height: 26, borderRadius: '50%', background: 'conic-gradient(red,yellow,lime,aqua,blue,magenta,red)', padding: 4, pointerEvents: 'none' }}>
-                            <div style={{ width: '100%', height: '100%', borderRadius: '50%', background: color }} />
-                          </div>
-                          <input type="color" value={color}
-                            onChange={e => handlePipingColorChange(zone, e.target.value)}
-                            style={{ position: 'absolute', inset: 0, opacity: 0, width: '100%', height: '100%', cursor: 'pointer', border: 'none', padding: 0 }} />
-                        </div>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0 }}>
-                        <span style={lbl}>Size</span>
-                        <div
-                          style={{ flex: 1, position: 'relative', height: 20, display: 'flex', alignItems: 'center', cursor: 'pointer', touchAction: 'none', userSelect: 'none' }}
-                          onPointerDown={e => {
-                            e.stopPropagation();
-                            e.currentTarget.setPointerCapture(e.pointerId);
-                            const rect = e.currentTarget.getBoundingClientRect();
-                            const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-                            handlePipingSizeChange(zone, +(0.5 + Math.round(ratio * 1.5 / 0.05) * 0.05).toFixed(2));
-                          }}
-                          onPointerMove={e => {
-                            if (!e.currentTarget.hasPointerCapture(e.pointerId)) return;
-                            e.stopPropagation();
-                            const rect = e.currentTarget.getBoundingClientRect();
-                            const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-                            handlePipingSizeChange(zone, +(0.5 + Math.round(ratio * 1.5 / 0.05) * 0.05).toFixed(2));
-                          }}
-                          onPointerUp={e => { e.stopPropagation(); e.currentTarget.releasePointerCapture(e.pointerId); }}
-                          onPointerCancel={e => { e.currentTarget.releasePointerCapture(e.pointerId); }}
-                        >
-                          <div style={{ width: '100%', height: 4, borderRadius: 2, background: '#e0e0e0', position: 'relative' }}>
-                            <div style={{ position: 'absolute', left: 0, top: 0, height: '100%', width: `${pct}%`, background: '#9b5268', borderRadius: 2 }} />
-                          </div>
-                          <div style={{ position: 'absolute', left: `${pct}%`, transform: 'translateX(-50%)', width: 14, height: 14, borderRadius: '50%', background: '#9b5268', pointerEvents: 'none' }} />
-                        </div>
-                      </div>
-                    </div>
-
                     {/* ── Pieces (single layout only) ── */}
-                    {zoneApplied && arrangement === 'single' && (
+                    {arrangement === 'single' && (
                       <>
                         <div style={secRow}>
                           <span style={secTitle}>Pieces ({zoneInstances.length})</span>
                           <div style={hair} />
                           <button
                             disabled={zoneInstances.length >= maxInstances}
-                            onPointerDown={e => { e.stopPropagation(); if (zoneInstances.length < maxInstances) handlePipingAddInstance(zone); }}
+                            onPointerDown={e => { e.stopPropagation(); if (zoneInstances.length < maxInstances) handlePipingAddInstance(tierIndex, zone); }}
                             style={{ fontSize: 11, padding: '3px 10px', borderRadius: 6, border: '1.5px solid #9b5268', background: zoneInstances.length >= maxInstances ? '#f0e0e5' : '#9b5268', color: zoneInstances.length >= maxInstances ? '#c9a9b3' : '#fff', cursor: zoneInstances.length >= maxInstances ? 'default' : 'pointer', fontWeight: 700, fontFamily: "'Quicksand',sans-serif", flexShrink: 0 }}>
                             + Duplicate
                           </button>
@@ -2749,7 +2693,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                           const setAngleFromEvent = (e) => {
                             const rect = e.currentTarget.getBoundingClientRect();
                             const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-                            handlePipingSetInstanceAngle(zone, idx, PIPING_FRONT_ANGLE + ratio * Math.PI * 2);
+                            handlePipingSetInstanceAngle(tierIndex, zone, idx, PIPING_FRONT_ANGLE + ratio * Math.PI * 2);
                           };
                           return (
                             <div key={inst.id} style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 5 }}>
@@ -2768,7 +2712,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                               </div>
                               <span style={{ fontSize: 10, fontWeight: 700, color: '#444', minWidth: 30, textAlign: 'right', fontFamily: "'Quicksand',sans-serif" }}>{angleDeg}°</span>
                               <button
-                                onPointerDown={e => { e.stopPropagation(); handlePipingRemoveInstance(zone, idx); }}
+                                onPointerDown={e => { e.stopPropagation(); handlePipingRemoveInstance(tierIndex, zone, idx); }}
                                 style={{ fontSize: 12, color: '#bbb', background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px', flexShrink: 0 }}>✕</button>
                             </div>
                           );
@@ -2783,12 +2727,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                         <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginTop: 8, flexWrap: 'wrap' }}>
                           {flipAdj && (() => {
                             const defaultFlip = pipingPopupEl.placement_config?.bottom_flip ?? true;
-                            const active = pipingBoardFlipBottom !== null ? pipingBoardFlipBottom : defaultFlip;
+                            const active = p.userFlipBottom != null ? p.userFlipBottom : defaultFlip;
                             return (
                               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                                 <span style={lbl}>Flip</span>
                                 <button
-                                  onPointerDown={e => { e.stopPropagation(); handlePipingBoardFlipChange(); }}
+                                  onPointerDown={e => { e.stopPropagation(); handlePipingBoardFlipChange(tierIndex); }}
                                   style={{ fontSize: 11, padding: '3px 11px', borderRadius: 6, border: `1.5px solid ${active ? '#9b5268' : '#e0d0d5'}`, background: active ? '#9b5268' : '#fff', color: active ? '#fff' : '#9b5268', cursor: 'pointer', fontWeight: 700, fontFamily: "'Quicksand',sans-serif" }}>
                                   {active ? '↕ On' : '↕ Off'}
                                 </button>
@@ -2800,17 +2744,17 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                               <span style={lbl}>Height</span>
                               <button
                                 style={{ width: 24, height: 24, borderRadius: 6, border: '1.5px solid #e0d0d5', background: '#fff', cursor: 'pointer', fontSize: 14, color: '#9b5268', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
-                                onPointerDown={e => { e.stopPropagation(); handlePipingBoardYOffsetChange(Math.max(0, +(pipingBoardYOffset - 0.05).toFixed(2))); }}>−</button>
+                                onPointerDown={e => { e.stopPropagation(); handlePipingBoardYOffsetChange(tierIndex, Math.max(0, +(boardY - 0.05).toFixed(2))); }}>−</button>
                               <span style={{ fontSize: 11, fontWeight: 700, color: '#444', minWidth: 36, textAlign: 'center', fontFamily: "'Quicksand',sans-serif" }}>
-                                {pipingBoardYOffset > 0 ? `+${pipingBoardYOffset.toFixed(2)}` : pipingBoardYOffset.toFixed(2)}
+                                {boardY > 0 ? `+${boardY.toFixed(2)}` : boardY.toFixed(2)}
                               </span>
                               <button
                                 style={{ width: 24, height: 24, borderRadius: 6, border: '1.5px solid #e0d0d5', background: '#fff', cursor: 'pointer', fontSize: 14, color: '#9b5268', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
-                                onPointerDown={e => { e.stopPropagation(); handlePipingBoardYOffsetChange(+(pipingBoardYOffset + 0.05).toFixed(2)); }}>+</button>
-                              {pipingBoardYOffset !== 0 && (
+                                onPointerDown={e => { e.stopPropagation(); handlePipingBoardYOffsetChange(tierIndex, +(boardY + 0.05).toFixed(2)); }}>+</button>
+                              {boardY !== 0 && (
                                 <button
                                   style={{ fontSize: 9, color: '#bbb', background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px', fontFamily: "'Quicksand',sans-serif" }}
-                                  onPointerDown={e => { e.stopPropagation(); handlePipingBoardYOffsetChange(0); }}>Reset</button>
+                                  onPointerDown={e => { e.stopPropagation(); handlePipingBoardYOffsetChange(tierIndex, 0); }}>Reset</button>
                               )}
                             </div>
                           )}
@@ -2820,6 +2764,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   </div>
                 );
               })}
+              </>);
+              })()}
             </div>
           )}
         </div>
@@ -3445,17 +3391,19 @@ const s = {
     color: '#9b5f72',
   },
 
+  // Narrow vertical strip docked to the right — same on desktop and mobile, so it never
+  // blankets the cake; the canvas is padded right by the same amount so the cake sits clear.
   pipingPopup: {
     position: 'absolute',
-    right: 14, top: '50%', transform: 'translateY(-50%)',
-    width: 258, maxHeight: '88vh',
-    background: 'rgba(255,255,255,0.92)',
+    right: 10, top: '50%', transform: 'translateY(-50%)',
+    width: 152, maxHeight: '94%',
+    background: 'rgba(255,255,255,0.95)',
     backdropFilter: 'blur(18px)',
     WebkitBackdropFilter: 'blur(18px)',
-    borderRadius: 20,
-    padding: '14px 16px 16px',
-    boxShadow: '0 4px 24px rgba(107,45,66,0.14)',
-    display: 'flex', flexDirection: 'column', gap: 8,
+    borderRadius: 16,
+    padding: '10px 10px 12px',
+    boxShadow: '0 4px 24px rgba(107,45,66,0.18)',
+    display: 'flex', flexDirection: 'column', gap: 7,
     overflowY: 'auto',
     zIndex: 20,
   },
@@ -3509,18 +3457,5 @@ const s = {
     boxShadow: '0 -4px 24px rgba(107,45,66,0.14)',
     zIndex: 25,
     display: 'flex', flexDirection: 'column',
-  },
-  pipingPopupMobile: {
-    position: 'absolute',
-    bottom: 0, left: 0, right: 0,
-    background: 'rgba(255,255,255,0.97)',
-    backdropFilter: 'blur(18px)',
-    WebkitBackdropFilter: 'blur(18px)',
-    borderRadius: '20px 20px 0 0',
-    padding: '14px 16px 24px',
-    boxShadow: '0 -4px 24px rgba(107,45,66,0.14)',
-    display: 'flex', flexDirection: 'column', gap: 10,
-    overflowY: 'auto', maxHeight: '60vh',
-    zIndex: 20,
   },
 };

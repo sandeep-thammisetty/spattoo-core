@@ -11,23 +11,33 @@ import { TIER_RADII, BOTTOM_H, PIPING_FRONT_ANGLE } from '../constants.js';
 //
 // `placement` is the object returned by pipingPlacementFromConfig() for this zone; its
 // fields may be null (unset), so we apply the same `??` defaults CakeTier uses.
-// Preview-only palette: a neutral light-grey cake so the cream piping reads clearly
-// (the real cake uses the user's chosen colors — this is just a legible stand-in).
-const PREVIEW_CAKE_COLOR  = '#E6E5EA';   // light grey body
-const PREVIEW_CAP_COLOR   = '#EFEEF2';   // slightly lighter top
-const PREVIEW_CREAM_COLOR = '#EE9A5C';   // warm peach cream — pops against the grey
-const PREVIEW_BOARD_COLOR = '#CFCDD6';   // cake board/drum the cake sits on
+// Preview-only palette: a dark-chocolate cake so the cream piping reads with strong
+// contrast (the real cake uses the user's chosen colors — this is just a legible stand-in).
+const PREVIEW_CAKE_COLOR  = '#3A2418';   // dark chocolate brown body
+const PREVIEW_CAP_COLOR   = '#46301F';   // slightly lighter chocolate top
+const PREVIEW_CREAM_COLOR = '#F5E6C8';   // cream — pops against the dark chocolate
+const PREVIEW_BOARD_COLOR = '#E8E4DD';   // light board/drum the cake sits on
 
 export default function PipingPreview({
   zone, glbUrl, color = PREVIEW_CREAM_COLOR, size = 1,
   placement = {}, arrangement = 'ring', instances = null,
-  autoRotate = true,
+  tiers = null, tierIndex = 0,
+  autoRotate = false,
 }) {
   const isTop  = zone === 'rim';
-  const R      = TIER_RADII[0];
-  const H      = BOTTOM_H;
-  const yBase  = 0;
-  const topY   = H;
+  // Stack the real tier geometry when provided, so a 2-tier cake previews AS a 2-tier
+  // cake with the ring on its actual tier (e.g. the bottom-tier rim sits at the seam the
+  // upper tier rests on). Falls back to a single bottom tier when no geometry is passed.
+  const geo = (tiers?.length ? tiers : [{ radius: TIER_RADII[0], height: BOTTOM_H }])
+    .map(t => ({ radius: t?.radius ?? TIER_RADII[0], height: t?.height ?? BOTTOM_H }));
+  let acc = 0;
+  const placed = geo.map(t => { const baseY = acc; acc += t.height; return { ...t, baseY, topY: baseY + t.height }; });
+  const totalH = acc;
+  const target = placed[Math.min(tierIndex, placed.length - 1)] ?? placed[0];
+  const R      = target.radius;     // ring radius = its own tier's radius
+  const R0     = placed[0].radius;  // bottom radius drives the board + framing
+  const yBase  = target.baseY;
+  const topY   = target.topY;
   const radial = placement.extraRadialOffset ?? 0;
   const yOff   = placement.yOffset ?? 0;
   const spacing = placement.spacing ?? 1;
@@ -44,14 +54,21 @@ export default function PipingPreview({
     altYOffset:      placement.altYOffset ?? 0,
     pattern:         placement.pattern ?? 'AB',
   };
+  // Frame the whole stack and look down on it at ~27° so the ring reads as a ring (not
+  // edge-on). camY/camZ ratio sets the tilt — 0.5 ≈ a 63° polar angle, within the clamp
+  // below. A small azimuth (≈18°) gives a static 3/4 view; horizontal distance stays camZ
+  // so the framing/tilt math is unchanged. No auto-spin so the default angle is stable.
+  const targetY = totalH * 0.5;
+  const camZ    = Math.max(R0 * 4.7, totalH * 2.4);
+  const camY    = targetY + camZ * 0.5;
+  const camX    = camZ * 0.309;             // sin(18°)
+  const camZView = camZ * 0.951;            // cos(18°)
 
   return (
     <Canvas
       dpr={[1, 2]}
       gl={{ alpha: true }}
-      // Pull back so the cake fills ~75% of the frame — leaves margin so the full ring
-      // of loops stays in view instead of being cropped at the edges.
-      camera={{ position: [0, H * 0.95, R * 4.7], fov: 32 }}
+      camera={{ position: [camX, camY, camZView], fov: 32 }}
       style={{ width: '100%', height: '100%' }}
     >
       <ambientLight intensity={0.85} />
@@ -61,18 +78,22 @@ export default function PipingPreview({
         <Environment preset="apartment" />
         {/* cake board / drum the cake sits on (top flush with the cake base at y=0) */}
         <mesh position={[0, -0.04, 0]}>
-          <cylinderGeometry args={[R * 1.32, R * 1.32, 0.08, 56]} />
+          <cylinderGeometry args={[R0 * 1.32, R0 * 1.32, 0.08, 56]} />
           <meshStandardMaterial color={PREVIEW_BOARD_COLOR} roughness={0.55} metalness={0.1} />
         </mesh>
-        {/* mini cake body */}
-        <mesh position={[0, H / 2, 0]}>
-          <cylinderGeometry args={[R, R, H, 48]} />
-          <meshStandardMaterial color={PREVIEW_CAKE_COLOR} roughness={0.85} />
-        </mesh>
-        <mesh position={[0, H + 0.005, 0]}>
-          <cylinderGeometry args={[R - 0.01, R - 0.01, 0.01, 48]} />
-          <meshStandardMaterial color={PREVIEW_CAP_COLOR} roughness={0.7} />
-        </mesh>
+        {/* stacked tier bodies, each with a thin top cap */}
+        {placed.map((t, i) => (
+          <group key={i}>
+            <mesh position={[0, t.baseY + t.height / 2, 0]}>
+              <cylinderGeometry args={[t.radius, t.radius, t.height, 48]} />
+              <meshStandardMaterial color={PREVIEW_CAKE_COLOR} roughness={0.85} />
+            </mesh>
+            <mesh position={[0, t.topY + 0.005, 0]}>
+              <cylinderGeometry args={[t.radius - 0.01, t.radius - 0.01, 0.01, 48]} />
+              <meshStandardMaterial color={PREVIEW_CAP_COLOR} roughness={0.7} />
+            </mesh>
+          </group>
+        ))}
         {isTop ? (
           <TopPipingRing
             topY={topY} radius={R} glbPath={glbUrl} color={color} sizeFactor={size}
@@ -96,7 +117,7 @@ export default function PipingPreview({
       {/* Gentle spin so bakers see the piping wraps (or sits at the front) around the cake. */}
       <OrbitControls
         enableZoom={false} enablePan={false} autoRotate={autoRotate} autoRotateSpeed={1.6}
-        target={[0, H / 2, 0]} minPolarAngle={Math.PI / 3} maxPolarAngle={Math.PI / 2.1}
+        target={[0, targetY, 0]} minPolarAngle={Math.PI / 3} maxPolarAngle={Math.PI / 2.1}
       />
     </Canvas>
   );
