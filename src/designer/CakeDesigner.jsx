@@ -4,6 +4,7 @@ import CakeCanvas, { CakeThumbnailCanvas, preloadTopper } from './canvas/CakeCan
 import { cfImg } from './utils/imageUtils';
 import { CAMERA_POSITION, CAMERA_POSITION_MOBILE, PIPING_FRONT_ANGLE } from './constants';
 import PipingPreview from './canvas/PipingPreview.jsx';
+import { SHELL_HEIGHT_FRAC, getShellExtents } from './canvas/pipingMetrics.js';
 import { useCakeDesign } from './hooks/useCakeDesign';
 import ColorGuide from '../chefsdesk/ColorGuide';
 import OrderModal from '../orders/OrderModal';
@@ -742,12 +743,17 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
   const [pipingPopupOpen,    setPipingPopupOpen]    = useState(false);
   // Accordion stack of opened piping elements. Each card edits one element (across
   // its rings); multiple cards coexist so several piping styles stack on the cake.
-  // Keyed by element id; only one card is expanded at a time. pipingPopupEl mirrors
-  // the expanded card's element so the existing card-body + handlers work unchanged.
+  // Each card carries a unique cardId (a card is an element instance — the SAME style can be
+  // added several times as independent nested rings), and its layers are tagged with that
+  // cardId. expandedPipingId holds the expanded card's cardId; only one is open at a time.
   const [pipingCards,        setPipingCards]        = useState([]);
   const [expandedPipingId,   setExpandedPipingId]   = useState(null);
-  // The element of the currently expanded card — drives the card body + edit handlers.
-  const pipingPopupEl = pipingCards.find(c => c.id === expandedPipingId) ?? null;
+  // The expanded card (element + cardId) — drives the card body + edit handlers.
+  const pipingPopupEl = pipingCards.find(c => c.cardId === expandedPipingId) ?? null;
+  // The expanded card renders pinned to the TOP of the stack, so its (often tall, multi-zone)
+  // controls always open from the top; reset the strip's scroll there whenever it changes.
+  const pipingPopupRef = useRef(null);
+  useEffect(() => { if (pipingPopupRef.current) pipingPopupRef.current.scrollTop = 0; }, [expandedPipingId]);
   const [activeElementTypeIds, setActiveElementTypeIds] = useState(new Set());
 
   // Capabilities fetched eagerly on mount so edit controls work
@@ -1112,39 +1118,47 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
   // Open (or focus) a card for this element in the accordion stack. Picking a new
   // element appends a card and expands it, collapsing the others — without closing
   // the stack or disturbing the other layers already on the cake.
-  async function openPipingPopup(el) {
-    // If the element supports exactly one zone there's nothing to choose — add it to the
-    // bottom tier by default. Multi-zone elements stay manual via each ring's toggle.
+  // Open a piping card. From the palette (no cardId) this ALWAYS spawns a fresh instance, so
+  // the same style can be placed several times as independent (e.g. differently coloured)
+  // nested rings. From click-to-edit (cardId given) it focuses the card owning that ring.
+  async function openPipingPopup(el, { cardId } = {}) {
+    const focusOnly = () => {
+      setColorOpen(false); setPipingPopupOpen(true); setElementsOpen(false); setSelectedEl(null);
+    };
+    if (cardId) {
+      setPipingCards(prev => prev.some(c => c.cardId === cardId) ? prev : [...prev, { ...el, cardId }]);
+      setExpandedPipingId(cardId);
+      focusOnly();
+      return;
+    }
+    const newCardId = crypto.randomUUID();
+    // Single-zone elements have nothing to choose — auto-add the ring (nested/stacked) on the
+    // bottom tier. Multi-zone elements stay manual via each ring's toggle.
     const zones = (el.allowed_zones ?? []).filter(z => z === 'rim' || z === 'board');
     if (zones.length === 1) {
-      const isTop   = zones[0] === 'rim';
-      const already = (isTop ? design.tiers[0]?.topPipings : design.tiers[0]?.bottomPipings)?.some(p => p.id === el.id);
-      if (!already) {
-        const { glbUrl, altGlbUrl } = resolvePipingGlbs(el);
-        const piping = {
-          id: el.id, glbUrl, name: el.name,
-          color: '#f5e6c8', size: 1,
-          ...pipingPlacementFromConfig(el.placement_config, isTop),
-          ...(altGlbUrl ? { altGlbUrl } : {}),
-        };
-        if (!isTop) piping.userYOffset = nextBoardYOffset(0);   // stack above existing board layers
-        addPipingLayer(0, zones[0], piping);
-      }
+      const isTop = zones[0] === 'rim';
+      const { glbUrl, altGlbUrl } = resolvePipingGlbs(el);
+      const piping = {
+        id: el.id, cardId: newCardId, glbUrl, name: el.name,
+        color: '#f5e6c8', size: 1,
+        ...pipingPlacementFromConfig(el.placement_config, isTop),
+        ...(altGlbUrl ? { altGlbUrl } : {}),
+      };
+      if (isTop) { const ro = nextRimRadialOffset(0); if (ro) piping.userRadialOffset = ro; }
+      else piping.userYOffset = nextBoardYOffset(0);
+      addPipingLayer(0, zones[0], piping);
     }
-    setPipingCards(prev => prev.some(c => c.id === el.id) ? prev : [...prev, el]);
-    setExpandedPipingId(el.id);
-    setColorOpen(false);
-    setPipingPopupOpen(true);
-    setElementsOpen(false);
-    setSelectedEl(null);
+    setPipingCards(prev => [...prev, { ...el, cardId: newCardId }]);
+    setExpandedPipingId(newCardId);
+    focusOnly();
   }
 
   // Drop a card from the accordion stack (UI only). Used when a card's last ring is
-  // unchecked — the cake no longer carries that element, so its card goes away too.
-  function dropPipingCard(elId) {
-    const remaining = pipingCards.filter(c => c.id !== elId);
+  // unchecked — that instance no longer carries any ring, so its card goes away too.
+  function dropPipingCard(cardId) {
+    const remaining = pipingCards.filter(c => c.cardId !== cardId);
     setPipingCards(remaining);
-    if (expandedPipingId === elId) setExpandedPipingId(remaining[remaining.length - 1]?.id ?? null);
+    if (expandedPipingId === cardId) setExpandedPipingId(remaining[remaining.length - 1]?.cardId ?? null);
   }
 
   // ── Ring-scoped edits ──────────────────────────────────────────────────────
@@ -1154,14 +1168,13 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
   // The applied piping for a ring, or null when it isn't on the cake yet.
   function ringPiping(tierIndex, zone) {
     const arr = zone === 'rim' ? design.tiers[tierIndex]?.topPipings : design.tiers[tierIndex]?.bottomPipings;
-    return arr?.find(p => p.id === pipingPopupEl?.id) ?? null;
+    return arr?.find(p => p.cardId === pipingPopupEl?.cardId) ?? null;
   }
 
   // ── Layer stacking / overlap avoidance ─────────────────────────────────────
-  // Cream shells are normalised to ~24% of the tier radius (see buildShellGeo); each
-  // layer fills a vertical band of that height. We use bands to stack side/board layers
-  // and to stop a raised side border from climbing into a rim border.
-  const PIPING_SHELL_FRAC = 0.24;
+  // Shell height shares ONE constant with the renderer (SHELL_HEIGHT_FRAC). This nominal,
+  // upright height is used only where an approximation is fine (initial stacking offsets).
+  const PIPING_SHELL_FRAC = SHELL_HEIGHT_FRAC;
   function pipingShellHeight(tierIndex, size = 1) {
     return (canvasConfig.tiers[tierIndex]?.radius ?? 0.35) * PIPING_SHELL_FRAC * size;
   }
@@ -1172,6 +1185,17 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
     if (zone === 'rim') { const top = (canvasConfig.tiers[tierIndex]?.height ?? 0) + yo; return [top - h, top]; }
     return [yo, yo + h];
   }
+  // EXACT tier-local band [lo, hi] of a side/board layer, from the shell extents the canvas
+  // measured for this exact GLB + flip + size (its real tilt/orientation baked in). This is
+  // what the Height clamp uses so "top edge touches the rim / bottom touches the board" is
+  // precise for any cake size or template — no hardcoded heights.
+  function sideBand(p, tierIndex) {
+    const radius = canvasConfig.tiers[tierIndex]?.radius ?? 0.35;
+    const flip   = p.userFlipBottom != null ? p.userFlipBottom : (p.flipBottom ?? true);
+    const { topFrac, botFrac } = getShellExtents(p.glbUrl, flip, p.size ?? 1);
+    const yo = (p.yOffset ?? 0) + (p.userYOffset ?? 0);
+    return [yo + radius * botFrac, yo + radius * topFrac];
+  }
   // Default userYOffset for a NEW side/board layer: stack it just above the highest board
   // layer already on the tier (kept within the wall) so layers don't overlap.
   function nextBoardYOffset(tierIndex) {
@@ -1181,18 +1205,46 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
     const maxLo = (canvasConfig.tiers[tierIndex]?.height ?? 0) - pipingShellHeight(tierIndex, 1);
     return Math.max(0, Math.min(top, Math.max(0, maxLo)));
   }
+  // Radial footprint a rim ring occupies, approximated from the tier radius the same way
+  // the vertical shell band is (the real width lives in the GLB bbox, unavailable here).
+  function pipingRingRadialWidth(tierIndex, size = 1) {
+    return pipingShellHeight(tierIndex, size);
+  }
+  // Inward userRadialOffset for a NEW rim layer so it nests CONCENTRICALLY inside any rings
+  // already on this tier's rim — each new ring steps inward by one shell width. First ring is
+  // flush with the edge (0). Always returns a value; use rimHasRoom() to gate before adding.
+  function nextRimRadialOffset(tierIndex) {
+    const rings = design.tiers[tierIndex]?.topPipings ?? [];
+    if (!rings.length) return 0;
+    let innermost = 0;
+    rings.forEach(p => { const o = p.userRadialOffset ?? 0; if (o < innermost) innermost = o; });
+    return innermost - pipingRingRadialWidth(tierIndex, 1);
+  }
+  // Whether the tier's rim can hold one more nested ring: the proposed inner edge must clear
+  // the floor — the cake center on the top tier, or the cylinder of the tier resting on this
+  // rim (so middle/bottom tiers hold fewer rings).
+  function rimHasRoom(tierIndex) {
+    if (!(design.tiers[tierIndex]?.topPipings ?? []).length) return true;
+    const radius    = canvasConfig.tiers[tierIndex]?.radius ?? 0.35;
+    const half      = pipingRingRadialWidth(tierIndex, 1) / 2;
+    const innerEdge = (radius - half + nextRimRadialOffset(tierIndex)) - half;
+    const upper     = canvasConfig.tiers[tierIndex + 1];   // tier resting on this rim, if any
+    return innerEdge >= (upper ? upper.radius : 0);
+  }
 
   // A fresh piping object for the open element in a zone, at config defaults.
   function buildRingPiping(zone, tierIndex = 0, overrides = {}) {
     const isTop = zone === 'rim';
     const { glbUrl, altGlbUrl } = resolvePipingGlbs(pipingPopupEl);
     const piping = {
-      id: pipingPopupEl.id, glbUrl, name: pipingPopupEl.name,
+      id: pipingPopupEl.id, cardId: pipingPopupEl.cardId, glbUrl, name: pipingPopupEl.name,
       color: '#f5e6c8', size: 1,
       ...pipingPlacementFromConfig(pipingPopupEl.placement_config, isTop),
     };
-    // New side/board layers stack above any existing board piping instead of overlapping.
+    // New side/board layers stack above any existing board piping; new rim layers nest
+    // concentrically inside any existing rim rings — both avoid overlapping what's there.
     if (!isTop) piping.userYOffset = nextBoardYOffset(tierIndex);
+    else { const ro = nextRimRadialOffset(tierIndex); if (ro) piping.userRadialOffset = ro; }
     Object.assign(piping, overrides);
     if (altGlbUrl) piping.altGlbUrl = altGlbUrl;   // patterns resolve B from a referenced block
     return piping;
@@ -1226,26 +1278,35 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
   }
 
   function handlePipingBoardYOffsetChange(tierIndex, v) {
-    const cur = design.tiers[tierIndex]?.bottomPipings?.find(p => p.id === pipingPopupEl?.id);
+    const cur = design.tiers[tierIndex]?.bottomPipings?.find(p => p.cardId === pipingPopupEl?.cardId);
     if (!cur) return;
-    // Cap the rise so the cream top stops at the cake top — or, if a rim border is on this
-    // tier, just below that rim band so the raised side border can't overlap it.
-    const size        = cur.size ?? 1;
+    // A sideways element rides its tier's wall inside the gap between whatever sits ABOVE it (a
+    // higher side element, else the tier's top edge / rim) and whatever sits BELOW (a lower side
+    // element / the board, else the tier base). It stops the instant an edge touches a neighbour.
+    // We clamp the shell's ANCHOR (yo), using each shell's EXACT measured top/bottom reach
+    // (sideBand) so the test is precise for tilted shells and any cake size — no guessed heights.
     const baseYOffset = cur.yOffset ?? 0;
-    const { height }  = canvasConfig.tiers[tierIndex];
-    const shellHeight = pipingShellHeight(tierIndex, size);
-    let ceiling = height;
-    (design.tiers[tierIndex]?.topPipings ?? []).forEach(p => {
-      const [lo] = pipingBand(p, tierIndex, 'rim');
-      if (lo < ceiling) ceiling = lo;
+    const tierHeight  = canvasConfig.tiers[tierIndex]?.height ?? 0;
+    const [curLo, curHi] = sideBand(cur, tierIndex);
+    const curYo  = baseYOffset + (cur.userYOffset ?? 0);
+    const topExt = curHi - curYo;   // how far the shell reaches ABOVE its anchor (measured)
+    const botExt = curLo - curYo;   // and BELOW (≤ 0 when it dips under the anchor)
+    const EPS = 1e-4;
+    let yoMin = -botExt;                 // bottom edge ≥ tier base (0)
+    let yoMax = tierHeight - topExt;     // top edge ≤ tier top edge (the rim) — exact contact
+    (design.tiers[tierIndex]?.bottomPipings ?? []).forEach(p => {
+      if (p.layerId === cur.layerId) return;
+      const [nlo, nhi] = sideBand(p, tierIndex);
+      if      (nhi <= curLo + EPS) yoMin = Math.max(yoMin, nhi - botExt);   // neighbour below → our bottom rests on it
+      else if (nlo >= curHi - EPS) yoMax = Math.min(yoMax, nlo - topExt);   // neighbour above → our top stops under it
     });
-    const maxOffset   = ceiling - baseYOffset - shellHeight;
-    const clamped = Math.min(Math.max(0, v), Math.max(0, maxOffset));
-    updatePipingLayer(tierIndex, 'board', cur.layerId, p => ({ ...p, userYOffset: clamped }));
+    const desiredYo = baseYOffset + v;
+    const clampedYo = Math.min(Math.max(yoMin, desiredYo), Math.max(yoMin, yoMax));
+    updatePipingLayer(tierIndex, 'board', cur.layerId, p => ({ ...p, userYOffset: Math.max(0, +(clampedYo - baseYOffset).toFixed(4)) }));
   }
 
   function handlePipingBoardFlipChange(tierIndex) {
-    const cur = design.tiers[tierIndex]?.bottomPipings?.find(p => p.id === pipingPopupEl?.id);
+    const cur = design.tiers[tierIndex]?.bottomPipings?.find(p => p.cardId === pipingPopupEl?.cardId);
     if (!cur) return;
     const defaultFlip = pipingPopupEl?.placement_config?.bottom_flip ?? true;
     const current = cur.userFlipBottom != null ? cur.userFlipBottom : defaultFlip;
@@ -1301,13 +1362,13 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
       const existing = ringPiping(tierIndex, zone);
       if (!existing) return;
       removePipingLayer(tierIndex, zone, existing.layerId);
-      // If that was this element's last piping anywhere, drop its card from the stack too.
-      const elId = pipingPopupEl?.id;
+      // If that was this card's last piping anywhere, drop its card from the stack too.
+      const cardId = pipingPopupEl?.cardId;
       const stillOn = design.tiers.some((t, i) =>
-        (t.topPipings ?? []).some(p => p.id === elId && !(zone === 'rim' && i === tierIndex && p.layerId === existing.layerId)) ||
-        (t.bottomPipings ?? []).some(p => p.id === elId && !(zone === 'board' && i === tierIndex && p.layerId === existing.layerId))
+        (t.topPipings ?? []).some(p => p.cardId === cardId && !(zone === 'rim' && i === tierIndex && p.layerId === existing.layerId)) ||
+        (t.bottomPipings ?? []).some(p => p.cardId === cardId && !(zone === 'board' && i === tierIndex && p.layerId === existing.layerId))
       );
-      if (!stillOn) dropPipingCard(elId);
+      if (!stillOn) dropPipingCard(cardId);
     } else {
       addPipingLayer(tierIndex, zone, buildRingPiping(zone, tierIndex));
     }
@@ -1413,20 +1474,25 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     setColorOpen(false);
   }
 
+  // Clicking a ring on the cake opens the card that owns it (matched by cardId). Layers from
+  // before instances existed (templates) carry no cardId — backfill one so the card binds.
+  function openCardForLayer(tierIndex, zone, piping) {
+    const cardId = piping.cardId ?? crypto.randomUUID();
+    if (!piping.cardId) updatePipingLayer(tierIndex, zone, piping.layerId, p => ({ ...p, cardId }));
+    const el = pipingElementById[piping.id] ?? { id: piping.id, name: piping.name, image_url: piping.glbUrl, thumbnail_url: null };
+    openPipingPopup(el, { cardId });
+  }
+
   function handleTopPipingSelect(tierIndex, layerId) {
     const arr = design.tiers[tierIndex]?.topPipings ?? [];
     const piping = arr.find(p => p.layerId === layerId) ?? arr[0];
-    if (!piping) return;
-    const el = pipingElementById[piping.id] ?? { id: piping.id, name: piping.name, image_url: piping.glbUrl, thumbnail_url: null };
-    openPipingPopup(el);
+    if (piping) openCardForLayer(tierIndex, 'rim', piping);
   }
 
   function handleBottomPipingSelect(tierIndex, layerId) {
     const arr = design.tiers[tierIndex]?.bottomPipings ?? [];
     const piping = arr.find(p => p.layerId === layerId) ?? arr[0];
-    if (!piping) return;
-    const el = pipingElementById[piping.id] ?? { id: piping.id, name: piping.name, image_url: piping.glbUrl, thumbnail_url: null };
-    openPipingPopup(el);
+    if (piping) openCardForLayer(tierIndex, 'board', piping);
   }
 
   function handleTopperClick() {
@@ -1553,9 +1619,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     const { tierIndex, zone } = pipingTarget;
     const isTop = zone === 'top';
     const piping = {
-      id: element.id, glbUrl: element.glbUrl, name: element.name, color: '#f5e6c8',
+      id: element.id, cardId: crypto.randomUUID(), glbUrl: element.glbUrl, name: element.name, color: '#f5e6c8',
       ...pipingPlacementFromConfig(element.placement_config, isTop),
     };
+    if (isTop) { const ro = nextRimRadialOffset(tierIndex); if (ro) piping.userRadialOffset = ro; }
+    else piping.userYOffset = nextBoardYOffset(tierIndex);
     addPipingLayer(tierIndex, isTop ? 'rim' : 'board', piping);
     setPipingTarget(null);
   }
@@ -2309,7 +2377,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
           {/* Shrink the live canvas to the left when the piping strip is open, so the
               cake stays fully visible beside it (the Canvas is absolute inset:0 of this div). */}
-          <div style={{ position: 'absolute', inset: 0, right: pipingPopupOpen ? 172 : 0, transition: 'right 0.18s ease' }}>
+          <div style={{ position: 'absolute', inset: 0, right: pipingPopupOpen ? 184 : 0, transition: 'right 0.18s ease' }}>
           <Suspense fallback={<div style={s.loading}>Loading 3D cake...</div>}>
             <CakeCanvas
               config={canvasConfig}
@@ -2643,23 +2711,34 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
           {/* ── Cream Piping popup ── */}
           {pipingPopupOpen && pipingCards.length > 0 && (
-            <div style={s.pipingPopup}>
+            <div ref={pipingPopupRef} className="piping-popup-scroll" style={s.pipingPopup}>
+              {/* WebKit scrollbar can't be hidden via inline style — inject the rule once. */}
+              <style>{`.piping-popup-scroll::-webkit-scrollbar{width:0;height:0;display:none}`}</style>
               {/* Accordion stack: one collapsible card per added piping element. Picking a
-                  new element from the left appends a card here; the cake renders all of
-                  them stacked. Only the expanded card shows its rim/board controls. */}
-              {pipingCards.map((card) => {
-                const expanded = card.id === expandedPipingId;
+                  new element from the left appends a card here; the cake renders all of them
+                  stacked. Only the expanded card shows its rim/board controls — and it's pinned
+                  to the top of the stack so its (often tall) controls open from the top, with
+                  the other cards collapsed to compact headers below. */}
+              {(expandedPipingId
+                ? [pipingCards.find(c => c.cardId === expandedPipingId), ...pipingCards.filter(c => c.cardId !== expandedPipingId)].filter(Boolean)
+                : pipingCards
+              ).map((card) => {
+                const expanded = card.cardId === expandedPipingId;
+                // Number instances of the SAME element ("Soft Swirl 1", "Soft Swirl 2", …)
+                // so duplicate cards are distinguishable; a lone instance stays unnumbered.
+                const sameEl = pipingCards.filter(c => c.id === card.id);
+                const title  = sameEl.length > 1 ? `${card.name} ${sameEl.indexOf(card) + 1}` : card.name;
                 return (
-                <div key={card.id} style={{ border: `1.5px solid ${expanded ? '#9b5268' : '#eadde2'}`, borderRadius: 10, overflow: 'hidden', background: '#fff' }}>
+                <div key={card.cardId} style={{ border: `1.5px solid ${expanded ? '#9b5268' : '#eadde2'}`, borderRadius: 10, overflow: 'hidden', background: '#fff' }}>
                   {/* Card header: thumbnail + element name + expand/collapse arrow.
                       No close button — a layer leaves the cake by unchecking its rings. */}
                   <div role="button"
-                    onClick={() => setExpandedPipingId(prev => prev === card.id ? null : card.id)}
+                    onClick={() => setExpandedPipingId(prev => prev === card.cardId ? null : card.cardId)}
                     style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 7px', cursor: 'pointer', background: expanded ? '#fbf3f6' : '#fff' }}>
                     <div style={{ width: 26, height: 26, borderRadius: 6, overflow: 'hidden', border: '1.5px solid #f0dce3', background: '#fff', flexShrink: 0 }}>
                       {card.thumbnail_url && <img src={cfImg(card.thumbnail_url, 26, 26, cfAssetsBase)} alt={card.name} width={26} height={26} decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
                     </div>
-                    <span style={{ fontSize: 10.5, fontWeight: 700, color: '#1a1a1a', flex: 1, minWidth: 0, lineHeight: 1.2, fontFamily: "'Quicksand',sans-serif", whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{card.name}</span>
+                    <span style={{ fontSize: 10.5, fontWeight: 700, color: '#1a1a1a', flex: 1, minWidth: 0, lineHeight: 1.2, fontFamily: "'Quicksand',sans-serif", whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</span>
                     <span style={{ fontSize: 9, color: '#9b5268', flexShrink: 0, transform: expanded ? 'none' : 'rotate(-90deg)', transition: 'transform 0.15s' }}>▼</span>
                   </div>
                   {expanded && (
@@ -2667,29 +2746,37 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   {(() => {
               const allowed = pipingPopupEl.allowed_zones?.length ? pipingPopupEl.allowed_zones : ['rim', 'board'];
               const multi   = design.tiers.length > 1;
-              // One card per candidate ring, ordered to mirror the cake top → bottom: each
-              // tier's rim from the top tier down, then the board (bottom tier only) last.
+              // One card per candidate ring, ordered to mirror the cake top → bottom.
               // Each is independently editable; the checkbox beside its preview adds/removes
               // it, and touching any control auto-adds it.
-              // A dual-zone element (rim + board) can't also sit on a rim already taken by
-              // another piping — offer it only sidewise (board) in that case.
-              const allowsBoth = allowed.includes('rim') && allowed.includes('board');
-              let rimGated = false;
+              //  • Rim — the top edge of each tier. A rim already carrying piping can still take
+              //    more rings, each nesting concentrically inside the last (nextRimRadialOffset),
+              //    until packed: the top tier fills to its center, lower tiers only to the
+              //    cylinder of the tier resting on them, so they hold fewer rings.
+              //  • Side/Board — the wall. A y-adjustable style is a sideways border that rides up
+              //    a tier's wall, so we offer it on EVERY tier's side. Non-adjustable board styles
+              //    are plate rings, valid on the bottom tier only.
+              const yAdjustable = !!pipingPopupEl.placement_config?.bottom_y_adjustable;
+              const allowsBoard = allowed.includes('board');
+              let rimFull = false;
               const candidates = [];
               for (let i = design.tiers.length - 1; i >= 0; i--) {
-                if (!allowed.includes('rim')) continue;
-                const rimTaken = (design.tiers[i].topPipings ?? []).some(pp => pp.id !== pipingPopupEl.id);
-                if (allowsBoth && rimTaken) { rimGated = true; continue; }
-                candidates.push({ tierIndex: i, zone: 'rim', label: multi ? `${TIER_LABELS[i]} Rim` : 'Rim' });
+                if (allowed.includes('rim')) {
+                  const mine = ringPiping(i, 'rim');   // this card already on this rim
+                  if (mine || rimHasRoom(i)) candidates.push({ tierIndex: i, zone: 'rim', label: multi ? `${TIER_LABELS[i]} Rim` : 'Rim' });
+                  else rimFull = true;
+                }
+                // Sideways border on an UPPER tier's wall (bottom tier is the board candidate below).
+                if (allowsBoard && yAdjustable && i > 0) candidates.push({ tierIndex: i, zone: 'board', label: `${TIER_LABELS[i]} Side` });
               }
-              if (allowed.includes('board')) candidates.push({ tierIndex: 0, zone: 'board', label: multi ? `${TIER_LABELS[0]} Board` : 'Board' });
+              if (allowsBoard) candidates.push({ tierIndex: 0, zone: 'board', label: multi ? `${TIER_LABELS[0]} Board` : 'Board' });
               return (<>
-              {rimGated && (
+              {rimFull && (
                 <div style={{ borderTop: '1px solid #f5eaed', paddingTop: 9, fontSize: 9.5, color: '#b29aa2', fontFamily: "'Quicksand',sans-serif", lineHeight: 1.45 }}>
-                  The rim already has piping — this style is offered on the side only so they don't overlap.
+                  A rim is fully packed with nested rings — this style is offered on the side instead so they don't overlap.
                 </div>
               )}
-              {multi && allowed.includes('board') && (
+              {multi && allowsBoard && !yAdjustable && (
                 <div style={{ borderTop: '1px solid #f5eaed', paddingTop: 9, fontSize: 9.5, color: '#b29aa2', fontFamily: "'Quicksand',sans-serif", lineHeight: 1.45 }}>
                   Board is on the bottom tier only — upper tiers rest on the rim of the tier below.
                 </div>
@@ -2697,7 +2784,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               {candidates.map(({ tierIndex, zone, label }) => {
                 const isTopZone     = zone === 'rim';
                 const applied       = ringPiping(tierIndex, zone);
-                const p             = applied ?? { color: '#f5e6c8', size: 1, ...pipingPlacementFromConfig(pipingPopupEl.placement_config, isTopZone) };
+                // Unapplied rim rings preview at the inward offset they'd nest to once added.
+                const nestRO        = (isTopZone && !applied) ? nextRimRadialOffset(tierIndex) : null;
+                const p             = applied ?? { color: '#f5e6c8', size: 1, ...pipingPlacementFromConfig(pipingPopupEl.placement_config, isTopZone), ...(nestRO ? { userRadialOffset: nestRO } : {}) };
                 const color         = p.color ?? '#f5e6c8';
                 const size          = p.size  ?? 1;
                 const pc            = pipingPopupEl.placement_config ?? {};
@@ -2830,15 +2919,17 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                     {/* ── Adjust: radial distance + flip + height on one row ── */}
                     <>
                         <div style={secRow}><span style={secTitle}>Adjust</span><div style={hair} /></div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginTop: 8, flexWrap: 'wrap' }}>
+                        {/* Each control is its OWN full-width row (label left, stepper right) and
+                            wraps internally, so nothing — including Reset — can clip off the edge. */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 7, marginTop: 8 }}>
                           {/* Radial distance — available for every ring. + out, − in. */}
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                            <span style={lbl}>Radial</span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 5, width: '100%', flexWrap: 'wrap' }}>
+                            <span style={{ ...lbl, flex: 1, minWidth: 0 }}>Radial</span>
                             <button
                               title="Move inward"
                               style={{ width: 24, height: 24, borderRadius: 6, border: '1.5px solid #e0d0d5', background: '#fff', cursor: 'pointer', fontSize: 14, color: '#9b5268', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
                               onPointerDown={e => { e.stopPropagation(); handlePipingRadialOffsetChange(tierIndex, zone, +(radial - 0.05).toFixed(2)); }}>−</button>
-                            <span style={{ fontSize: 11, fontWeight: 700, color: '#444', minWidth: 36, textAlign: 'center', fontFamily: "'Quicksand',sans-serif" }}>
+                            <span style={{ fontSize: 11, fontWeight: 700, color: '#444', minWidth: 32, textAlign: 'center', fontFamily: "'Quicksand',sans-serif" }}>
                               {radial > 0 ? `+${radial.toFixed(2)}` : radial.toFixed(2)}
                             </span>
                             <button
@@ -2855,8 +2946,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                             const defaultFlip = pipingPopupEl.placement_config?.bottom_flip ?? true;
                             const active = p.userFlipBottom != null ? p.userFlipBottom : defaultFlip;
                             return (
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                <span style={lbl}>Flip</span>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 5, width: '100%', flexWrap: 'wrap' }}>
+                                <span style={{ ...lbl, flex: 1, minWidth: 0 }}>Flip</span>
                                 <button
                                   onPointerDown={e => { e.stopPropagation(); handlePipingBoardFlipChange(tierIndex); }}
                                   style={{ fontSize: 11, padding: '3px 11px', borderRadius: 6, border: `1.5px solid ${active ? '#9b5268' : '#e0d0d5'}`, background: active ? '#9b5268' : '#fff', color: active ? '#fff' : '#9b5268', cursor: 'pointer', fontWeight: 700, fontFamily: "'Quicksand',sans-serif" }}>
@@ -2866,12 +2957,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                             );
                           })()}
                           {yAdj && (
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                              <span style={lbl}>Height</span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 5, width: '100%', flexWrap: 'wrap' }}>
+                              <span style={{ ...lbl, flex: 1, minWidth: 0 }}>Height</span>
                               <button
                                 style={{ width: 24, height: 24, borderRadius: 6, border: '1.5px solid #e0d0d5', background: '#fff', cursor: 'pointer', fontSize: 14, color: '#9b5268', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
                                 onPointerDown={e => { e.stopPropagation(); handlePipingBoardYOffsetChange(tierIndex, Math.max(0, +(boardY - 0.05).toFixed(2))); }}>−</button>
-                              <span style={{ fontSize: 11, fontWeight: 700, color: '#444', minWidth: 36, textAlign: 'center', fontFamily: "'Quicksand',sans-serif" }}>
+                              <span style={{ fontSize: 11, fontWeight: 700, color: '#444', minWidth: 32, textAlign: 'center', fontFamily: "'Quicksand',sans-serif" }}>
                                 {boardY > 0 ? `+${boardY.toFixed(2)}` : boardY.toFixed(2)}
                               </span>
                               <button
@@ -3528,7 +3619,7 @@ const s = {
     // Anchored to the top (not vertically centred) so collapsing/expanding a card grows
     // the strip downward without shifting its position.
     right: 10, top: 12,
-    width: 152, maxHeight: 'calc(100% - 24px)',
+    width: 164, maxHeight: 'calc(100% - 24px)',
     background: 'rgba(255,255,255,0.95)',
     backdropFilter: 'blur(18px)',
     WebkitBackdropFilter: 'blur(18px)',
@@ -3536,7 +3627,14 @@ const s = {
     padding: '10px 10px 12px',
     boxShadow: '0 4px 24px rgba(107,45,66,0.18)',
     display: 'flex', flexDirection: 'column', gap: 7,
+    // Scroll the stack with a finger-slide when it outgrows the strip; no visible scrollbar
+    // (hidden inline for Firefox/IE, and via the injected ::-webkit-scrollbar rule below).
     overflowY: 'auto',
+    WebkitOverflowScrolling: 'touch',
+    touchAction: 'pan-y',
+    overscrollBehavior: 'contain',
+    scrollbarWidth: 'none',
+    msOverflowStyle: 'none',
     zIndex: 20,
   },
 

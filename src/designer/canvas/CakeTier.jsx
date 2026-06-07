@@ -1,8 +1,9 @@
-import { useMemo } from 'react';
+import { useMemo, useEffect } from 'react';
 import * as THREE from 'three';
 import { useGLTF } from '@react-three/drei';
 import { tierShape, pipingPerimeter, rectEdgeRing } from '../geometry/surface.js';
 import { PIPING_FRONT_ANGLE } from '../constants.js';
+import { SHELL_HEIGHT_FRAC, setShellExtents } from './pipingMetrics.js';
 
 // ── Extract the single mesh from a per-style GLB ──────────────────────────────
 function extractGeo(scene) {
@@ -23,7 +24,7 @@ function extractGeo(scene) {
 // Bake a shell geometry from a GLB scene: optional flip (180° X + re-anchor to the base)
 // and normalise size to ~24% of the tier radius. Returns the geometry plus the scale and
 // bounding extents the ring uses for radius/spacing. Shared by version A and the alternate.
-function buildShellGeo(scene, flip, radius, sizeFactor) {
+function buildShellGeo(scene, flip, radius, sizeFactor, tiltDeg = [0, 0, 0]) {
   const result = extractGeo(scene);
   if (!result) return null;
   const geo = result.geo;
@@ -34,10 +35,19 @@ function buildShellGeo(scene, flip, radius, sizeFactor) {
   }
   geo.computeBoundingBox();
   const bbSize = new THREE.Vector3(); geo.boundingBox.getSize(bbSize);
-  // Height-normalised base scale (shell ≈ 24% of the tier radius tall) × the user's size.
-  const sc1 = (radius * 0.24) / result.sizeY;
+  // Height-normalised base scale (upright shell ≈ SHELL_HEIGHT_FRAC of the tier radius
+  // tall) × the user's size.
+  const sc1 = (radius * SHELL_HEIGHT_FRAC) / result.sizeY;
   const sc  = capShellScale(sc1, sizeFactor, bbSize.z, radius);
-  return { geometry: geo, shellScale: sc, bbDepth: bbSize.z, bbWidth: bbSize.x };
+  // True rendered vertical reach: transform the shell's bounding box by the same scale and
+  // tilt (meshRot X/Z — the renderer's yaw about Y and swag don't change Y extent) the Shell
+  // mesh applies, so worldTopY/worldBotY are how far the shell actually reaches above/below
+  // its anchor. This is what makes "top edge touches the rim" exact for tilted shells.
+  const m = new THREE.Matrix4()
+    .makeRotationFromEuler(new THREE.Euler(tiltDeg[0] * DEG, 0, tiltDeg[2] * DEG))
+    .multiply(new THREE.Matrix4().makeScale(sc, sc, sc));
+  const wbox = geo.boundingBox.clone().applyMatrix4(m);
+  return { geometry: geo, shellScale: sc, bbDepth: bbSize.z, bbWidth: bbSize.x, worldTopY: wbox.max.y, worldBotY: wbox.min.y };
 }
 
 const DEG = Math.PI / 180;
@@ -263,10 +273,17 @@ function BottomPipingRingImpl({
   const { scene }          = useGLTF(glbPath);
   const { scene: sceneAlt } = useGLTF(altGlbUrl || glbPath);
 
-  const A = useMemo(() => buildShellGeo(scene, flipBottom, radius, sizeFactor),
-    [scene, flipBottom, radius, sizeFactor]);
+  const br0 = bottomRotation?.[0] ?? 0, br2 = bottomRotation?.[2] ?? 0;
+  const A = useMemo(() => buildShellGeo(scene, flipBottom, radius, sizeFactor, [br0, 0, br2]),
+    [scene, flipBottom, radius, sizeFactor, br0, br2]);
   const B = useMemo(() => (altEnabled ? buildShellGeo(sceneAlt, altFlip, radius, sizeFactor) : null),
     [altEnabled, sceneAlt, altFlip, radius, sizeFactor]);
+
+  // Publish this shell's exact rendered vertical reach (as radius fractions) for the editor's
+  // Height clamp, so it can test rim/board contact precisely instead of guessing a height.
+  useEffect(() => {
+    if (A && glbPath && radius) setShellExtents(glbPath, flipBottom, sizeFactor, { topFrac: A.worldTopY / radius, botFrac: A.worldBotY / radius });
+  }, [A, glbPath, flipBottom, sizeFactor, radius]);
 
   const altActive = altEnabled && arrangement !== 'single';
 
@@ -504,7 +521,7 @@ export default function CakeTier({
       altFlip={p.altFlip ?? false} altRotation={p.altRotation ?? [0,0,0]}
       altRadialOffset={p.altRadialOffset ?? 0} altYOffset={(p.altYOffset ?? 0) + (p.userYOffset ?? 0)}
       pattern={p.pattern ?? 'AB'} shape={shp}
-      selected={highlightPipingId != null ? p.id === highlightPipingId : topPipingSelected}
+      selected={highlightPipingId != null ? p.cardId === highlightPipingId : topPipingSelected}
       onClick={e => { e.stopPropagation(); onTopPipingClick?.(e, p.layerId); }} />
   ));
 
@@ -522,7 +539,7 @@ export default function CakeTier({
       altFlip={p.altFlip ?? false} altRotation={p.altRotation ?? [0,0,0]}
       altRadialOffset={p.altRadialOffset ?? 0} altYOffset={(p.altYOffset ?? 0) + (p.userYOffset ?? 0)}
       pattern={p.pattern ?? 'AB'} shape={shp}
-      selected={highlightPipingId != null ? p.id === highlightPipingId : bottomPipingSelected}
+      selected={highlightPipingId != null ? p.cardId === highlightPipingId : bottomPipingSelected}
       onClick={e => { e.stopPropagation(); onBottomPipingClick?.(e, p.layerId); }} />
   ));
 
