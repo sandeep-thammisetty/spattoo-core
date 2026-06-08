@@ -4,7 +4,7 @@ import CakeCanvas, { CakeThumbnailCanvas, preloadTopper } from './canvas/CakeCan
 import { cfImg } from './utils/imageUtils';
 import { CAMERA_POSITION, CAMERA_POSITION_MOBILE, PIPING_FRONT_ANGLE, TIER_RADII, BOTTOM_H, BEND_ANCHOR_FRAC } from './constants';
 import PipingPreview from './canvas/PipingPreview.jsx';
-import { SHELL_HEIGHT_FRAC, getShellExtents } from './canvas/pipingMetrics.js';
+import { SHELL_HEIGHT_FRAC, getShellExtents, getFestoonExtents, festoonSig } from './canvas/pipingMetrics.js';
 import { useCakeDesign } from './hooks/useCakeDesign';
 import ColorGuide from '../chefsdesk/ColorGuide';
 import OrderModal from '../orders/OrderModal';
@@ -1153,8 +1153,11 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
       if (isTop) { const ro = nextRimRadialOffset(0); if (ro) piping.userRadialOffset = ro; }
       else {
         piping.yAdjustable = !!el.placement_config?.bottom_y_adjustable;
-        // Festoon swags start at their dynamic wall anchor (0); other side borders stack.
-        piping.userYOffset = (piping.bend || !piping.yAdjustable) ? 0 : nextBoardYOffset(0);
+        // Festoon swags bake an offset that lifts them clear of whatever's already on the board;
+        // other side borders stack above existing layers; a plate ring sits flush (0).
+        piping.userYOffset = piping.bend
+          ? nextFestoonYOffset(0, piping)
+          : (piping.yAdjustable ? nextBoardYOffset(0) : 0);
       }
       addRingLayer(0, zones[0], piping);
     }
@@ -1194,10 +1197,9 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
     // A festoon swag spans from its belly (anchor − scaled depth) up to its ends (anchor + a
     // little proud) — report that real band so new layers stack around the swag, not over it.
     if (zone === 'board' && p.bend) {
-      const radius = canvasConfig.tiers[tierIndex]?.radius ?? TIER_RADII[0];
-      const depthScaled = (p.bendDepth ?? 0.4) * (radius / TIER_RADII[0]);
       const anchor = tierHeight * BEND_ANCHOR_FRAC + (p.userYOffset ?? 0);
-      return [anchor - depthScaled, anchor + radius * 0.1];
+      const { belly, top } = festoonReach(p, tierIndex);   // measured: real cream reach below/above anchor
+      return [anchor - belly, anchor + top];
     }
     const h  = pipingShellHeight(tierIndex, p.size ?? 1);
     const yo = (p.yOffset ?? 0) + (p.userYOffset ?? 0);
@@ -1223,6 +1225,36 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
     boards.forEach(p => { const [, hi] = pipingBand(p, tierIndex, 'board'); if (hi > top) top = hi; });
     const maxLo = (canvasConfig.tiers[tierIndex]?.height ?? 0) - pipingShellHeight(tierIndex, 1);
     return Math.max(0, Math.min(top, Math.max(0, maxLo)));
+  }
+  // A festoon swag's REAL vertical reach (cake units) below and above its anchor, from the bent
+  // geometry the canvas measured (rope thickness baked in). Falls back — until the swag has
+  // rendered once — to a generous estimate (centreline drop + a full shell for the rope) so a
+  // first-time add over-clears rather than overlapping. depthRel = drop as a fraction of radius.
+  function festoonReach(p, tierIndex) {
+    const radius   = canvasConfig.tiers[tierIndex]?.radius ?? TIER_RADII[0];
+    const depthRel = (p.bendDepth ?? 0.4) / TIER_RADII[0];
+    const fallback = { bellyFrac: depthRel + SHELL_HEIGHT_FRAC * (p.size ?? 1), topFrac: SHELL_HEIGHT_FRAC * 0.5 * (p.size ?? 1) };
+    const { bellyFrac, topFrac } = getFestoonExtents(p.glbUrl, festoonSig(p), fallback);
+    return { belly: radius * bellyFrac, top: radius * topFrac };
+  }
+  // Baked userYOffset for a NEW festoon swag so its lowest CREAM rests just above the highest board
+  // layer already on the tier (e.g. a base border), instead of dropping the drape over it. Computed
+  // ONCE at add-time and stored — the renderer never re-fits it, so the swag won't jump when later
+  // layers are added; those stack around its reported band (pipingBand) instead. Returns 0 (the
+  // plain wall anchor) when the board is empty, and caps so the swag's ends stay under the rim.
+  // Works for every tier — all extents come from this tier's own radius/height/neighbours.
+  function nextFestoonYOffset(tierIndex, piping) {
+    const boards = (design.tiers[tierIndex]?.bottomPipings ?? []).filter(p => !p.bend);
+    if (!boards.length) return 0;
+    const tierHeight  = canvasConfig.tiers[tierIndex]?.height ?? 0;
+    const anchorBase  = tierHeight * BEND_ANCHOR_FRAC;
+    const { belly, top } = festoonReach(piping, tierIndex);
+    let borderTop = 0;
+    boards.forEach(p => { const [, hi] = sideBand(p, tierIndex); if (hi > borderTop) borderTop = hi; });
+    const anchor    = borderTop + belly;          // swag's lowest cream sits on the border's top
+    const maxAnchor = tierHeight - top;            // keep the proud ends under the rim
+    const clamped   = Math.min(Math.max(anchorBase, anchor), Math.max(anchorBase, maxAnchor));
+    return +(clamped - anchorBase).toFixed(4);
   }
   // Radial footprint a rim ring occupies, approximated from the tier radius the same way
   // the vertical shell band is (the real width lives in the GLB bbox, unavailable here).
@@ -1275,9 +1307,12 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
     // non-adjustable PLATE ring is singular (one per board) and sits flush on the board (0).
     if (!isTop) {
       piping.yAdjustable = !!pipingPopupEl.placement_config?.bottom_y_adjustable;
-      // Festoon swags start at their dynamic wall anchor (userYOffset 0); other side borders
-      // stack above what's already on the board.
-      piping.userYOffset = (piping.bend || !piping.yAdjustable) ? 0 : nextBoardYOffset(tierIndex);
+      // Festoon swags bake an offset (once) that lifts them clear of whatever's already on the
+      // board, then stay put. Other y-adjustable side borders stack above existing layers; a
+      // non-adjustable plate ring is singular and sits flush on the board (0).
+      piping.userYOffset = piping.bend
+        ? nextFestoonYOffset(tierIndex, piping)
+        : (piping.yAdjustable ? nextBoardYOffset(tierIndex) : 0);
     } else { const ro = nextRimRadialOffset(tierIndex); if (ro) piping.userRadialOffset = ro; }
     Object.assign(piping, overrides);
     if (altGlbUrl) piping.altGlbUrl = altGlbUrl;   // patterns resolve B from a referenced block
@@ -1726,7 +1761,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       ...pipingPlacementFromConfig(element.placement_config, isTop),
     };
     if (isTop) { const ro = nextRimRadialOffset(tierIndex); if (ro) piping.userRadialOffset = ro; }
-    else piping.userYOffset = nextBoardYOffset(tierIndex);
+    else piping.userYOffset = piping.bend ? nextFestoonYOffset(tierIndex, piping) : nextBoardYOffset(tierIndex);
     addPipingLayer(tierIndex, isTop ? 'rim' : 'board', piping);
     setPipingTarget(null);
   }

@@ -35,3 +35,31 @@ export function getShellExtents(glbUrl, flip, size) {
   return measured.get(keyFor(glbUrl, flip, size))
     ?? { topFrac: SHELL_HEIGHT_FRAC * (size ?? 1), botFrac: 0, radialOutFrac: 0, radialInFrac: -SHELL_HEIGHT_FRAC * (size ?? 1) };
 }
+
+// ── Festoon (swag) extents ────────────────────────────────────────────────────
+// A U-shaped festoon is a thick draped rope, so its real lowest point hangs well below the
+// belly *centreline* (anchor − depth) by the rope's own half-thickness, and its ends sit a
+// little proud above the anchor. The renderer measures the bent geometry's true bounding box
+// and publishes how far it reaches BELOW and ABOVE the anchor (as fractions of the tier radius,
+// which is radius-independent since the whole swag scales with the radius). The editor reads
+// this so a swag is lifted to rest its ACTUAL cream — not the centreline — on the border below
+// it, and so other layers stack around its real band. Keyed by (glbUrl, shape signature).
+const measuredFestoon = new Map();
+const festoonKey = (glbUrl, sig) => `${glbUrl}|${sig}`;
+
+// Shape signature for a festoon — the params that change its bent geometry (and thus its
+// vertical reach). Shared by renderer and editor so they key the same measurement.
+export const festoonSig = (p) =>
+  `${(p.size ?? 1).toFixed(2)}|${(p.bendDepth ?? 0.4).toFixed(2)}|${Math.round(p.festoons ?? 6)}|${p.bendRing ? 1 : 0}|${(p.bendTilt ?? 0).toFixed(1)}`;
+
+export function setFestoonExtents(glbUrl, sig, extents) {
+  if (glbUrl) measuredFestoon.set(festoonKey(glbUrl, sig), extents);
+}
+
+// Read back measured festoon extents, or the supplied fallback when this swag hasn't rendered
+// yet (first add). Values are fractions of the tier radius:
+//   bellyFrac — how far the lowest cream reaches BELOW the anchor
+//   topFrac   — how far the highest cream reaches ABOVE the anchor
+export function getFestoonExtents(glbUrl, sig, fallback) {
+  return measuredFestoon.get(festoonKey(glbUrl, sig)) ?? fallback;
+}

@@ -4,7 +4,7 @@ import { useGLTF } from '@react-three/drei';
 import { tierShape, pipingPerimeter, rectEdgeRing } from '../geometry/surface.js';
 import { buildFestoons } from '../geometry/festoon.js';
 import { PIPING_FRONT_ANGLE, TIER_RADII, BEND_ANCHOR_FRAC } from '../constants.js';
-import { SHELL_HEIGHT_FRAC, setShellExtents } from './pipingMetrics.js';
+import { SHELL_HEIGHT_FRAC, setShellExtents, setFestoonExtents, festoonSig } from './pipingMetrics.js';
 
 // ── Extract the single mesh from a per-style GLB ──────────────────────────────
 function extractGeo(scene) {
@@ -402,6 +402,22 @@ function BottomPipingRingImpl({
     });
   }, [bend, scene, shape, festoons, bendDepth, bendTilt, yBase, yOffset, radius, extraRadialOffset, bendRing, sizeFactor]);
 
+  // Publish the swag's TRUE vertical reach (its bent bounding box, as radius fractions) so the
+  // editor can lift it to rest its actual cream — not the centreline — on the border below it.
+  // attachY is baked into the geometry, so reaches are measured relative to it.
+  useEffect(() => {
+    if (!festoonGeos?.length || !radius) return;
+    const anchorY = yBase + yOffset;
+    let minY = Infinity, maxY = -Infinity;
+    festoonGeos.forEach(g => {
+      g.computeBoundingBox?.();
+      if (g.boundingBox) { minY = Math.min(minY, g.boundingBox.min.y); maxY = Math.max(maxY, g.boundingBox.max.y); }
+    });
+    if (minY < maxY) setFestoonExtents(glbPath, festoonSig({ size: sizeFactor, bendDepth, festoons, bendRing, bendTilt }), {
+      bellyFrac: (anchorY - minY) / radius, topFrac: (maxY - anchorY) / radius,
+    });
+  }, [festoonGeos, yBase, yOffset, radius, glbPath, sizeFactor, bendDepth, festoons, bendRing, bendTilt]);
+
   if (!A && !festoonGeos) return null;
 
   return (
@@ -610,16 +626,17 @@ export default function CakeTier({
       onClick={e => { e.stopPropagation(); onTopPipingClick?.(e, p.layerId); }} />
   ));
 
-  // Festoon anchor = a fraction of the wall + the offset committed when it was added (which
-  // already cleared the borders that existed then). It does NOT react to layers added later, so
-  // an existing swag never jumps when something new is placed — new layers stack around IT.
+  // Festoon anchor = a fraction of the wall + the offset BAKED when the swag was added (which
+  // already cleared whatever borders existed then — see nextFestoonYOffset in CakeDesigner). It
+  // does NOT react to layers added later, so an existing swag never jumps when something new is
+  // placed; instead the new layer stacks around the swag's reported band.
   const renderBottoms = () => bottoms.map((p, idx) => (
     <BottomPipingRing key={p.layerId ?? `b${idx}`} yBase={yBase} radius={radius} glbPath={p.glbUrl} color={p.color}
       sizeFactor={p.size ?? 1}
       bottomRotation={p.bottomRotation ?? [0,0,0]}
       extraRadialOffset={(p.extraRadialOffset ?? 0) + (p.userRadialOffset ?? 0)}
       yOffset={p.bend
-        ? height * BEND_ANCHOR_FRAC + (p.userYOffset ?? 0)   // festoon: wall anchor + committed nudge
+        ? height * BEND_ANCHOR_FRAC + (p.userYOffset ?? 0)   // festoon: wall anchor + baked/nudged offset
         : (p.yOffset ?? 0) + (p.userYOffset ?? 0)}
       flipBottom={p.userFlipBottom !== undefined ? p.userFlipBottom : (p.flipBottom ?? true)}
       spacing={p.spacing ?? 1}
