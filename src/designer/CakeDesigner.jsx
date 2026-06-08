@@ -1,4 +1,5 @@
 import { Suspense, useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { HexColorPicker } from 'react-colorful';
 import CakeCanvas, { CakeThumbnailCanvas, preloadTopper } from './canvas/CakeCanvas';
 import { cfImg } from './utils/imageUtils';
@@ -178,28 +179,62 @@ function SizeDial({ size = 1, min = 0.5, max = 2, step = 0.05, onChange }) {
 }
 
 // ── Color picker (react-colorful) ─────────────────────────────────────────────
-function ColorWheel({ color, onChange }) {
+function ColorWheel({ color, onChange, cakeColors = [], width = 216 }) {
   // Common cake piping colour presets
   const PRESETS = [
     '#ffffff','#f5e6c8','#f5b8c8','#e8a0b0','#c8b5e8',
     '#b5c8e8','#b5e8d5','#f0c040','#e87040','#5c3d2e',
     '#3e2010','#1a1a1a','#d4af37','#8b1a1a','#2e5c3e',
   ];
+  const dot = Math.max(18, Math.round(width / 9.8));   // swatch size scales with panel width
+  const swatch = (c, key) => (
+    <div key={key} onClick={() => onChange(c)} style={{
+      width: dot, height: dot, borderRadius: '50%', background: c, cursor: 'pointer',
+      border: color.toLowerCase() === c.toLowerCase() ? '2.5px solid #9b5f72' : '1.5px solid #e0d0d5',
+      boxSizing: 'border-box', flexShrink: 0,
+      boxShadow: '0 1px 3px rgba(0,0,0,0.12)',
+    }} />
+  );
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
-      <HexColorPicker color={color} onChange={onChange} style={{ width: 216, height: 180 }} />
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, width: 216 }}>
-        {PRESETS.map(c => (
-          <div key={c} onClick={() => onChange(c)} style={{
-            width: 22, height: 22, borderRadius: '50%', background: c, cursor: 'pointer',
-            border: color === c ? '2.5px solid #9b5f72' : '1.5px solid #e0d0d5',
-            boxSizing: 'border-box', flexShrink: 0,
-            boxShadow: '0 1px 3px rgba(0,0,0,0.12)',
-          }} />
-        ))}
+      <HexColorPicker color={color} onChange={onChange} style={{ width, height: Math.round(width * 0.72) }} />
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, width, justifyContent: 'center' }}>
+        {PRESETS.map(c => swatch(c, c))}
       </div>
+      {cakeColors.length > 0 && (
+        <div style={{ width }}>
+          <div style={{
+            fontSize: 10, fontWeight: 600, letterSpacing: '0.06em',
+            color: '#9b5f72', textTransform: 'uppercase', marginBottom: 7, textAlign: 'center',
+          }}>Colors from cake</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'center' }}>
+            {cakeColors.map((c, i) => swatch(c, `cake-${i}`))}
+          </div>
+        </div>
+      )}
     </div>
   );
+}
+
+// "Colors from cake" reuse rows are split by material so a reused hue renders EXACTLY.
+// Tiers use a plain matte material; pipings/elements use a sheened (glossy) one — the same
+// hex reads differently across the two. So a tier picker only offers other tier colors, and
+// an element picker only offers other element colors; cross-material colors are never shown.
+function collectTierColors(design) {
+  const out = [];
+  design.tiers?.forEach(t => { if (t.color) out.push(t.color); });
+  return out;
+}
+function collectElementColors(design) {
+  const out = [];
+  const push = c => { if (c) out.push(c); };
+  design.tiers?.forEach(t => {
+    t.topPipings?.forEach(p => push(p.color));
+    t.bottomPipings?.forEach(p => push(p.color));
+  });
+  design.texts?.forEach(t => push(t.color));
+  design.stickers?.forEach(s => { if (s.allowedActions?.color !== false) push(s.color); });
+  return out;
 }
 
 // ── Zone label map ────────────────────────────────────────────────────────────
@@ -754,6 +789,10 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
   // cardId. expandedPipingId holds the expanded card's cardId; only one is open at a time.
   const [pipingCards,        setPipingCards]        = useState([]);
   const [expandedPipingId,   setExpandedPipingId]   = useState(null);
+  // Which ring's color picker popup is open, keyed `${cardId}-${zone}-${tierIndex}` (null = none),
+  // plus the screen-space anchor (the tapped Color dot) the floating popup positions against.
+  const [pipingColorKey,     setPipingColorKey]     = useState(null);
+  const [pipingColorAnchor,  setPipingColorAnchor]  = useState(null);
   // The expanded card (element + cardId) — drives the card body + edit handlers.
   const pipingPopupEl = pipingCards.find(c => c.cardId === expandedPipingId) ?? null;
   // The expanded card renders pinned to the TOP of the stack, so its (often tall, multi-zone)
@@ -2644,13 +2683,22 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               </div>
 
               {/* Color wheel — tier (always), piping/text (when colorOpen) */}
-              {caps?.color && (tierPanelVisible || colorOpen) && (
-                <ColorWheel
-                  key={`${selectedEl.type}-${selectedEl.index ?? selectedEl.tierIndex ?? selectedEl.id ?? 'x'}-${selectedEl.zone ?? ''}`}
-                  color={currentColor}
-                  onChange={handleColorChange}
-                />
-              )}
+              {caps?.color && (tierPanelVisible || colorOpen) && (() => {
+                // Offer same-material colors so a reused hue renders exactly: tier → other
+                // tier colors (matte), any element → other element colors (sheened). The
+                // current selection's own color is dropped (no point reoffering it).
+                const pool = selectedEl?.type === 'tier' ? collectTierColors(design) : collectElementColors(design);
+                const cakeColors = [...new Set(pool)]
+                  .filter(c => c.toLowerCase() !== currentColor.toLowerCase());
+                return (
+                  <ColorWheel
+                    key={`${selectedEl.type}-${selectedEl.index ?? selectedEl.tierIndex ?? selectedEl.id ?? 'x'}-${selectedEl.zone ?? ''}`}
+                    color={currentColor}
+                    onChange={handleColorChange}
+                    cakeColors={cakeColors}
+                  />
+                );
+              })()}
 
               {/* Corner radius — only for sheet (rectangular) tiers */}
               {selectedEl?.type === 'tier' && design.tiers[selectedEl.index]?.shape === 'rect' && (() => {
@@ -2987,13 +3035,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                     {/* Color + Size */}
                     <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'center', gap: 22, marginTop: 8 }}>
                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-                        <div style={{ position: 'relative', width: 26, height: 26, flexShrink: 0, cursor: 'pointer' }}>
-                          <div style={{ width: 26, height: 26, borderRadius: '50%', background: 'conic-gradient(red,yellow,lime,aqua,blue,magenta,red)', padding: 4, pointerEvents: 'none' }}>
-                            <div style={{ width: '100%', height: '100%', borderRadius: '50%', background: color }} />
-                          </div>
-                          <input type="color" value={color}
-                            onChange={e => handlePipingColorChange(tierIndex, zone, e.target.value)}
-                            style={{ position: 'absolute', inset: 0, opacity: 0, width: '100%', height: '100%', cursor: 'pointer', border: 'none', padding: 0 }} />
+                        <div role="button" title="Choose colour"
+                          onClick={e => {
+                            const k = `${card.cardId}-${zone}-${tierIndex}`;
+                            const r = e.currentTarget.getBoundingClientRect();
+                            setPipingColorAnchor({ top: r.top, left: r.left });
+                            setPipingColorKey(prev => prev === k ? null : k);
+                          }}
+                          style={{ width: 26, height: 26, flexShrink: 0, cursor: 'pointer', borderRadius: '50%', background: 'conic-gradient(red,yellow,lime,aqua,blue,magenta,red)', padding: 4 }}>
+                          <div style={{ width: '100%', height: '100%', borderRadius: '50%', background: color }} />
                         </div>
                         <span style={cap}>Color</span>
                       </div>
@@ -3002,6 +3052,34 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                         <span style={cap}>Size</span>
                       </div>
                     </div>
+
+                    {/* Colour picker — the same wheel as tiers, floated as a popup. Portaled to
+                        <body> so it escapes the card's narrow, backdrop-blurred scroll container
+                        (a backdrop-filter ancestor would otherwise trap a fixed-positioned child).
+                        Anchored to the left of the tapped Color dot, clamped to the viewport. */}
+                    {pipingColorKey === `${card.cardId}-${zone}-${tierIndex}` && pipingColorAnchor && createPortal(
+                      (() => {
+                        const PW = 216, EST_H = 400, PAD = 14;
+                        const left = Math.max(8, pipingColorAnchor.left - PW - 2 * PAD - 18);
+                        const top  = Math.max(8, Math.min(pipingColorAnchor.top - 48, window.innerHeight - EST_H));
+                        return (
+                          <div style={{ position: 'fixed', top, left, zIndex: 4000, background: '#fff',
+                            borderRadius: 16, padding: PAD, boxShadow: '0 12px 44px rgba(0,0,0,0.24)',
+                            border: '1px solid #eadde2' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                              <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', color: '#9b5268', textTransform: 'uppercase' }}>{label}</span>
+                              <button style={s.iconBtn} onClick={() => setPipingColorKey(null)}>✕</button>
+                            </div>
+                            <ColorWheel
+                              color={color}
+                              onChange={c => handlePipingColorChange(tierIndex, zone, c)}
+                              cakeColors={[...new Set(collectElementColors(design))].filter(c => c.toLowerCase() !== color.toLowerCase())}
+                            />
+                          </div>
+                        );
+                      })(),
+                      document.body
+                    )}
 
                     {/* Ring vs Single — full-width row directly below the cake preview */}
                     {arrAdjustable && (
