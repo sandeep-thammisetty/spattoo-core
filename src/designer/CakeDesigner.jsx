@@ -83,6 +83,7 @@ function pipingPlacementFromConfig(placementConfig, isTop) {
       extraRadialOffset: pc.top_radial_offset  ?? null,
       yOffset:           pc.top_y_offset        ?? null,
       spacing:           pc.top_spacing         ?? null,
+      softness:          pc.top_softness        ?? null,
       swagCount:         pc.top_swag_count      ?? null,
       swagDepth:         pc.top_swag_depth      ?? null,
       swagTilt:          pc.top_swag_tilt       ?? null,
@@ -98,6 +99,7 @@ function pipingPlacementFromConfig(placementConfig, isTop) {
     extraRadialOffset: pc.bottom_radial_offset ?? null,
     yOffset:           pc.bottom_y_offset      ?? null,
     spacing:           pc.bottom_spacing       ?? null,
+    softness:          pc.bottom_softness      ?? null,
     swagCount:         pc.bottom_swag_count    ?? null,
     swagDepth:         pc.bottom_swag_depth    ?? null,
     swagTilt:          pc.bottom_swag_tilt     ?? null,
@@ -1295,14 +1297,21 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
     const clamped   = Math.min(Math.max(anchorBase, anchor), Math.max(anchorBase, maxAnchor));
     return +(clamped - anchorBase).toFixed(4);
   }
-  // Radial footprint a rim ring occupies, approximated from the tier radius the same way
-  // the vertical shell band is (the real width lives in the GLB bbox, unavailable here).
+  // Radial footprint a rim ring occupies. Uses the MEASURED radial span of the rings already on
+  // this rim — published by the renderer once each has drawn, so it reflects the GLB's real
+  // width (a wide rosette occupies far more than the nominal upright shell height, which is why
+  // a nominal step let the next ring overlap it). Falls back to the nominal shell width only
+  // before anything has rendered. Takes the widest existing ring so the step always clears it.
   function pipingRingRadialWidth(tierIndex, size = 1) {
-    return pipingShellHeight(tierIndex, size);
+    const rings = design.tiers[tierIndex]?.topPipings ?? [];
+    let w = 0;
+    rings.forEach(p => { const [lo, hi] = rimRadialBand(p, tierIndex); if (hi - lo > w) w = hi - lo; });
+    return w > 0 ? w : pipingShellHeight(tierIndex, size);
   }
   // Inward userRadialOffset for a NEW rim layer so it nests CONCENTRICALLY inside any rings
-  // already on this tier's rim — each new ring steps inward by one shell width. First ring is
-  // flush with the edge (0). Always returns a value; use rimHasRoom() to gate before adding.
+  // already on this tier's rim — each new ring steps inward by the existing rings' MEASURED
+  // radial width, so its outer edge meets their inner edge (touching, not overlapping). First
+  // ring is flush with the edge (0). Always returns a value; use rimHasRoom() to gate first.
   function nextRimRadialOffset(tierIndex) {
     const rings = design.tiers[tierIndex]?.topPipings ?? [];
     if (!rings.length) return 0;

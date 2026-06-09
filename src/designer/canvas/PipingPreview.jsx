@@ -56,6 +56,7 @@ export default function PipingPreview({
   const radial = placement.extraRadialOffset ?? 0;
   const yOff   = placement.yOffset ?? 0;
   const spacing = placement.spacing ?? 1;
+  const softness = placement.softness ?? undefined;   // undefined → ring uses PIPING_SOFTNESS_DEFAULT
   const swag   = [placement.swagCount ?? 0, placement.swagDepth ?? 0, placement.swagTilt ?? 0.5];
   const inst   = arrangement === 'single'
     ? (instances?.length ? instances : [{ id: 0, angle: PIPING_FRONT_ANGLE }])
@@ -136,7 +137,7 @@ export default function PipingPreview({
         ))}
         {isTop ? (
           <TopPipingRing
-            topY={topY} radius={R} glbPath={glbUrl} color={color} sizeFactor={size}
+            topY={topY} radius={R} glbPath={glbUrl} color={color} sizeFactor={size} softness={softness}
             topRotation={placement.rotation ?? [0, 0, 0]}
             extraRadialOffset={radial} yOffset={yOff}
             flipTop={placement.flipTop ?? false} spacing={spacing}
@@ -145,7 +146,7 @@ export default function PipingPreview({
           />
         ) : (
           <BottomPipingRing
-            yBase={yBase} radius={R} glbPath={glbUrl} color={color} sizeFactor={size}
+            yBase={yBase} radius={R} glbPath={glbUrl} color={color} sizeFactor={size} softness={softness}
             bottomRotation={placement.bottomRotation ?? [0, 0, 0]}
             extraRadialOffset={radial} yOffset={yOff}
             flipBottom={placement.flipBottom ?? true} spacing={spacing}
