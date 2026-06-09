@@ -7,7 +7,8 @@ import { CAMERA_POSITION, CAMERA_POSITION_MOBILE, PIPING_FRONT_ANGLE, TIER_RADII
 import PipingPreview from './canvas/PipingPreview.jsx';
 import { SHELL_HEIGHT_FRAC, getShellExtents, getFestoonExtents, festoonSig } from './canvas/pipingMetrics.js';
 import { useCakeDesign } from './hooks/useCakeDesign';
-import { CREAM_FONTS, DEFAULT_CREAM_FONT } from './geometry/creamText.js';
+import { CREAM_FONTS, DEFAULT_CREAM_FONT, creamFontPreview } from './geometry/creamText.js';
+import { NOZZLES, NOZZLE_BY_KEY, DEFAULT_NOZZLE } from './geometry/creamPen.js';
 import ColorGuide from '../chefsdesk/ColorGuide';
 import OrderModal from '../orders/OrderModal';
 import OrdersPanel from '../orders/OrdersPanel';
@@ -237,6 +238,26 @@ function PenSlider({ label, value, min, max, step, onChange, fmt = v => v }) {
         style={{ flex: 1, accentColor: '#9b5f72' }} />
       <span style={{ fontSize: 11, fontWeight: 700, color: '#9b5f72', minWidth: 34, textAlign: 'right' }}>{fmt(value)}</span>
     </div>
+  );
+}
+
+// Cream-pen font swatch — renders the font's own single-stroke shapes (not a system face)
+// so bakers pick by the real piped look. The centerline path is stroked with round caps.
+function CreamFontButton({ fontKey, label, selected, onClick }) {
+  const { d, width, height } = useMemo(() => creamFontPreview(fontKey, 'Abc'), [fontKey]);
+  const sw = Math.max(width, height) * 0.05;   // bead ≈ 5% of glyph extent
+  const active = selected ? '#9b5f72' : '#f0dce3';
+  return (
+    <button key={fontKey} onClick={onClick} title={label}
+      style={{ padding: '6px 8px', borderRadius: 8, cursor: 'pointer',
+        border: `1.5px solid ${active}`, background: selected ? '#fbf3f6' : '#fff',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: 64, height: 34 }}>
+      <svg viewBox={`${-sw} ${-sw} ${width + sw * 2} ${height + sw * 2}`} height={22}
+        style={{ display: 'block', maxWidth: 96 }} preserveAspectRatio="xMidYMid meet">
+        <path d={d} fill="none" stroke={selected ? '#9b5f72' : '#777'}
+          strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    </button>
   );
 }
 
@@ -804,10 +825,11 @@ function AddUserModal({ onClose, brandBtn }) {
 // ── Cream piping inline section (per-tier, per-zone controls) ─────────────────
 // ── Main designer ─────────────────────────────────────────────────────────────
 export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'cake-thumbnails', onOrder, onSaveTemplate, cfAssetsBase }) {
-  const { design, setTierColor, setTierCornerR, addPipingLayer, updatePipingLayer, removePipingLayer, addText, updateText, duplicateText, removeText, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, setTopper, setTopperScale, setWriting, clearWriting, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
+  const { design, setTierColor, setTierCornerR, addPipingLayer, updatePipingLayer, removePipingLayer, addText, updateText, duplicateText, removeText, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, setTopper, setTopperScale, setWriting, clearWriting, addStroke, removeStroke, clearPiping, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
   const [elementsOpen, setElementsOpen] = useState(false);
   const [toolsOpen, setToolsOpen]   = useState(false);
-  const [activeTool, setActiveTool] = useState(null);   // null = tool list · 'cream-pen'
+  const [activeTool, setActiveTool] = useState(null);   // null = tool list · 'cream-pen' (Texts) · 'pen' (freehand Cream Pen)
+  const [penStyle, setPenStyle] = useState({ nozzle: DEFAULT_NOZZLE, color: '#ffffff', thickness: 0.03, softness: 0.7 });
   const [elementTypes, setElementTypes] = useState([]);
   const [elementTypesLoading, setElementTypesLoading] = useState(false);
   const [toppersDb, setToppersDb] = useState([]);
@@ -1029,6 +1051,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
       stickers: design.stickers,
       topper:   design.topper ?? null,
       writing:  design.writing ?? null,
+      piping:   design.piping ?? [],
     };
 
     try {
@@ -1939,6 +1962,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       texts:    design.texts,
       stickers: design.stickers,
       topper:   design.topper ?? null,
+      writing:  design.writing ?? null,   // typed cream lettering — was being dropped on order
+      piping:   design.piping ?? [],       // freehand cream-pen strokes
     };
 
     if (editingOrder) {
@@ -2296,8 +2321,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               { id: 'new',        label: 'New Cake',  icon: null },
               { id: 'dashboard',  label: 'Dashboard', icon: <DashboardIcon size={20} /> },
               { id: 'templates',  label: 'Templates', icon: <TemplatesIcon size={20} /> },
-              { id: 'elements',   label: 'Elements',  icon: <ElementsIcon size={20} /> },
-              { id: 'tools',      label: 'Tools',     icon: <ToolsIcon size={20} /> },
+              { id: 'elements',   label: 'Decorations', icon: <ElementsIcon size={20} /> },
               { id: 'text',       label: 'Text',      icon: <TextIcon size={20} /> },
               { id: 'orders',     label: 'Orders',    icon: <OrdersIcon size={20} /> },
               { id: 'customers',  label: 'Customers', icon: <CustomersIcon size={20} /> },
@@ -2491,13 +2515,45 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   />
               ));
             })()}
+
+            {/* Cream pen + texts — code-level decoration sections (not DB element types), shown
+                last. Tapping opens the editor in the same flyout slot; its back arrow returns here. */}
+            {!elemSearch.trim() && (
+              <>
+                <button
+                  onClick={() => { setToolsOpen(true); setActiveTool('pen'); }}
+                  style={{ ...s.elementCard, flexDirection: 'row', gap: 10, alignItems: 'center', cursor: 'pointer' }}>
+                  <div style={{ width: 40, height: 40, borderRadius: 10, background: '#fbeef2', flexShrink: 0 }} />
+                  <div style={{ textAlign: 'left' }}>
+                    <div style={{ fontSize: 13, fontWeight: 800, color: '#444' }}>Cream Pen</div>
+                    <div style={{ fontSize: 10, color: '#888' }}>Draw cream freehand on the cake</div>
+                  </div>
+                </button>
+                <button
+                  onClick={() => { setToolsOpen(true); setActiveTool('cream-pen'); if (!design.writing) setWriting({ font: DEFAULT_CREAM_FONT }); }}
+                  style={{ ...s.elementCard, flexDirection: 'row', gap: 10, alignItems: 'center', cursor: 'pointer' }}>
+                  <div style={{ width: 40, height: 40, borderRadius: 10, background: '#fbeef2', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9b5f72', flexShrink: 0 }}>
+                    <TextIcon size={22} />
+                  </div>
+                  <div style={{ textAlign: 'left' }}>
+                    <div style={{ fontSize: 13, fontWeight: 800, color: '#444' }}>Texts</div>
+                    <div style={{ fontSize: 10, color: '#888' }}>Write a name in piped cream</div>
+                  </div>
+                </button>
+              </>
+            )}
             </div>{/* end flyoutScroll */}
           </div>
         )}
 
-        {/* ── Tools flyout ── */}
+        {/* ── Cream Pen / Texts editor — a RIGHT-side popup (desktop) like the cream-piping
+              popup, so the Decorations panel stays open on the left and the pen can be used
+              alongside other cream elements. On mobile it stays a bottom sheet. ── */}
         {toolsOpen && (
-          <div style={{ ...s.flyout, ...(isMobile ? { ...s.flyoutMobile, height: mobilePanelHeight } : { width: 268 }) }}>
+          <div style={{ ...s.flyout, ...(isMobile
+            ? { ...s.flyoutMobile, height: mobilePanelHeight }
+            : { left: 'auto', right: 10, top: 12, bottom: 'auto', width: 256, margin: 0, borderRadius: 16,
+                maxHeight: 'min(calc(100% - 24px), calc(100vh - 96px))' }) }}>
             {isMobile && (
               <div style={s.panelHandle} onPointerDown={handlePanelDrag}>
                 <div style={s.panelHandlePill} />
@@ -2505,52 +2561,97 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             )}
             <div style={s.flyoutHeader}>
               <span style={s.flyoutTitle}>
-                {activeTool === 'cream-pen'
-                  ? <button style={{ ...s.iconBtn, marginRight: 6 }} onClick={() => setActiveTool(null)}>‹</button>
-                  : null}
-                {activeTool === 'cream-pen' ? 'Cream Pen' : 'Tools'}
+                {activeTool === 'pen' ? 'Cream Pen' : 'Texts'}
               </span>
-              <button style={s.iconBtn} onClick={() => setToolsOpen(false)}>✕</button>
+              <button style={s.iconBtn} onClick={() => { setToolsOpen(false); setActiveTool(null); }}>✕</button>
             </div>
 
             <div style={s.flyoutScroll}>
-              {/* Tool list */}
-              {activeTool === null && (
-                <button
-                  onClick={() => { setActiveTool('cream-pen'); if (!design.writing) setWriting({ font: DEFAULT_CREAM_FONT }); }}
-                  style={{ ...s.elementCard, flexDirection: 'row', gap: 10, alignItems: 'center', cursor: 'pointer' }}>
-                  <div style={{ width: 40, height: 40, borderRadius: 10, background: '#fbeef2', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9b5f72', flexShrink: 0 }}>
-                    <ToolsIcon size={22} />
+              {/* Cream Pen (freehand) editor */}
+              {activeTool === 'pen' && (
+                <>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: '#999' }}>
+                    Drag on the cake to pipe cream — release to stop. Drag the empty space around it to rotate.
                   </div>
-                  <div style={{ textAlign: 'left' }}>
-                    <div style={{ fontSize: 13, fontWeight: 800, color: '#444' }}>Cream Pen</div>
-                    <div style={{ fontSize: 10, color: '#888' }}>Write a name on the cake top</div>
+
+                  <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 6 }}>Nozzle</div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                    {NOZZLES.map(n => {
+                      const on = penStyle.nozzle === n.key, r = 13, c = 15;
+                      const d = n.profile.map((p, i) => `${i ? 'L' : 'M'}${(c + p[0] * r).toFixed(1)} ${(c - p[1] * r).toFixed(1)}`).join(' ') + ' Z';
+                      return (
+                        <button key={n.key} onClick={() => setPenStyle(ps => ({ ...ps, nozzle: n.key }))} title={n.hint}
+                          style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, padding: '6px 4px', borderRadius: 8,
+                            cursor: 'pointer', background: on ? '#fbeef2' : '#fff', border: `2px solid ${on ? '#9b5f72' : '#f0dce3'}`, minWidth: 52 }}>
+                          <svg width={30} height={30} viewBox="0 0 30 30">
+                            <circle cx={c} cy={c} r={r + 1.5} fill="none" stroke="#e8d5dc" strokeWidth="1.2" />
+                            <path d={d} fill={penStyle.color} stroke="#9b5f72" strokeWidth="1" strokeLinejoin="round" />
+                          </svg>
+                          <span style={{ fontSize: 9, fontWeight: 800, color: on ? '#9b5f72' : '#888' }}>{n.label}</span>
+                        </button>
+                      );
+                    })}
                   </div>
-                </button>
+
+                  <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 8 }}>Cream colour</div>
+                  <ColorWheel color={penStyle.color} onChange={c => setPenStyle(ps => ({ ...ps, color: c }))}
+                    cakeColors={[...new Set(collectElementColors(design))].filter(c => c.toLowerCase() !== penStyle.color.toLowerCase())} width={208} />
+
+                  <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 8, marginBottom: 6 }}>Adjust</div>
+                  <PenSlider label="Thickness" value={penStyle.thickness} min={0.008} max={0.07} step={0.002} onChange={v => setPenStyle(ps => ({ ...ps, thickness: v }))} fmt={v => v.toFixed(3)} />
+                  <PenSlider label="Softness"  value={penStyle.softness}  min={0}     max={1}    step={0.05}  onChange={v => setPenStyle(ps => ({ ...ps, softness: v }))}  fmt={v => v.toFixed(2)} />
+
+                  <div style={{ fontSize: 11, fontWeight: 700, color: '#6b8c74', marginTop: 8 }}>
+                    {design.piping.length} stroke{design.piping.length === 1 ? '' : 's'}
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
+                    <button onClick={removeStroke} disabled={!design.piping.length}
+                      style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: '1.5px solid #f0dce3', background: '#fff', fontWeight: 700, fontSize: 12,
+                        color: design.piping.length ? '#9b5f72' : '#ccc', cursor: design.piping.length ? 'pointer' : 'not-allowed' }}>
+                      ↶ Undo
+                    </button>
+                    <button onClick={clearPiping} disabled={!design.piping.length}
+                      style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: '1.5px solid #f0dce3', background: '#fff', fontWeight: 700, fontSize: 12,
+                        color: design.piping.length ? '#b56' : '#ccc', cursor: design.piping.length ? 'pointer' : 'not-allowed' }}>
+                      Clear all
+                    </button>
+                  </div>
+                </>
               )}
 
-              {/* Cream Pen editor */}
+              {/* Texts editor (typed cream writing) */}
               {activeTool === 'cream-pen' && (() => {
                 const w = design.writing ?? {};
+                const isMultiline = (w.text ?? '').includes('\n');
+                const surface = w.surface ?? 'top';
+                const SURFACES = [{ k: 'top', label: 'Top' }, { k: 'side', label: 'Side' }, { k: 'board', label: 'Board' }];
                 return (
                   <>
-                    <input
+                    <div style={{ display: 'flex', gap: 4, background: '#f6eef1', borderRadius: 9, padding: 3, flexShrink: 0 }}>
+                      {SURFACES.map(s => (
+                        <button key={s.k} onClick={() => setWriting({ surface: s.k })}
+                          style={{ flex: 1, padding: '6px 0', borderRadius: 7, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 800,
+                            background: surface === s.k ? '#9b5f72' : 'transparent', color: surface === s.k ? '#fff' : '#9b5f72' }}>
+                          {s.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    <textarea
                       value={w.text ?? ''}
                       onChange={e => setWriting({ text: e.target.value })}
-                      placeholder="Type a message…"
+                      placeholder={'Type a message…\n(Enter for a new line)'}
+                      rows={2}
                       style={{ width: '100%', boxSizing: 'border-box', padding: '9px 11px', fontSize: 14, fontWeight: 700, color: '#444',
-                        border: '1.5px solid #f0dce3', borderRadius: 8, outline: 'none', background: '#fdf9fa', fontFamily: "'Quicksand', sans-serif", flexShrink: 0 }}
+                        border: '1.5px solid #f0dce3', borderRadius: 8, outline: 'none', background: '#fdf9fa', fontFamily: "'Quicksand', sans-serif",
+                        flexShrink: 0, resize: 'vertical', lineHeight: 1.35 }}
                     />
 
                     <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 2 }}>Font</div>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
                       {CREAM_FONTS.map(f => (
-                        <button key={f.key} onClick={() => setWriting({ font: f.key })}
-                          style={{ fontSize: 11, padding: '4px 9px', borderRadius: 7, cursor: 'pointer', fontWeight: 700,
-                            border: `1.5px solid ${w.font === f.key ? '#9b5f72' : '#f0dce3'}`,
-                            background: w.font === f.key ? '#9b5f72' : '#fff', color: w.font === f.key ? '#fff' : '#666' }}>
-                          {f.label}
-                        </button>
+                        <CreamFontButton key={f.key} fontKey={f.key} label={f.label}
+                          selected={w.font === f.key} onClick={() => setWriting({ font: f.key })} />
                       ))}
                     </div>
 
@@ -2561,12 +2662,35 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                     <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 8, marginBottom: 6 }}>Adjust</div>
                     <PenSlider label="Thickness" value={w.thickness ?? 0.03} min={0.008} max={0.07} step={0.002} onChange={v => setWriting({ thickness: v })} fmt={v => v.toFixed(3)} />
                     <PenSlider label="Size"      value={w.fit ?? 0.8}        min={0.3}   max={0.95} step={0.05}  onChange={v => setWriting({ fit: v })}       fmt={v => `${Math.round(v * 100)}%`} />
-                    <PenSlider label="Rotate"    value={w.yaw ?? 0}          min={-180}  max={180}  step={1}     onChange={v => setWriting({ yaw: v })}       fmt={v => `${Math.round(v)}°`} />
+                    {surface !== 'side' && (
+                      <PenSlider label="Curve"   value={w.curve ?? 0}        min={-1}    max={1}    step={0.05}  onChange={v => setWriting({ curve: v })}     fmt={v => v === 0 ? 'flat' : `${Math.round(v * 100)}%`} />
+                    )}
+                    {surface !== 'side' && (
+                      <PenSlider label="Rotate"  value={w.yaw ?? 0}          min={-180}  max={180}  step={1}     onChange={v => setWriting({ yaw: v })}       fmt={v => `${Math.round(v)}°`} />
+                    )}
+                    {isMultiline && (
+                      <PenSlider label="Line gap" value={w.lineSpacing ?? 1.4} min={1}   max={2.2}  step={0.05}  onChange={v => setWriting({ lineSpacing: v })} fmt={v => `${v.toFixed(2)}×`} />
+                    )}
 
-                    <button onClick={() => { clearWriting(); setActiveTool(null); }}
-                      style={{ marginTop: 10, padding: '9px 0', borderRadius: 8, border: '1.5px solid #f0dce3', background: '#fff', color: '#b56', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>
-                      Remove writing
-                    </button>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: '#999', marginTop: 4 }}>
+                      {surface === 'side' ? 'Drag the writing around and up the cake side.'
+                        : surface === 'board' ? 'Drag the writing around the cake board.'
+                        : 'Drag the writing anywhere on the cake top.'}
+                    </div>
+
+                    <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                      <button onClick={() => setWriting(surface === 'side' ? { sideAngle: 0, sideY: undefined }
+                          : surface === 'board' ? { boardX: undefined, boardZ: undefined }
+                          : { offsetX: 0, offsetZ: 0 })}
+                        style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: '1.5px solid #f0dce3', background: '#fff',
+                          color: '#9b5f72', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>
+                        Recentre
+                      </button>
+                      <button onClick={() => { clearWriting(); setActiveTool(null); }}
+                        style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: '1.5px solid #f0dce3', background: '#fff', color: '#b56', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>
+                        Remove writing
+                      </button>
+                    </div>
                   </>
                 );
               })()}
@@ -2694,7 +2818,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
           {/* Shrink the live canvas to the left when the piping strip is open, so the
               cake stays fully visible beside it (the Canvas is absolute inset:0 of this div). */}
-          <div style={{ position: 'absolute', inset: 0, right: pipingPopupOpen ? 184 : 0, transition: 'right 0.18s ease' }}>
+          <div style={{ position: 'absolute', inset: 0, right: (!isMobile && toolsOpen) ? 276 : (pipingPopupOpen ? 184 : 0), transition: 'right 0.18s ease' }}>
           <Suspense fallback={<div style={s.loading}>Loading 3D cake...</div>}>
             <CakeCanvas
               config={canvasConfig}
@@ -2719,7 +2843,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               topperSelected={selectedEl?.type === 'topper'}
               topperToolbar={null}
               onWritingClick={() => { setToolsOpen(true); setActiveTool('cream-pen'); setElementsOpen(false); setTemplatesOpen(false); }}
+              onWritingMove={moves => setWriting(moves)}
               writingSelected={toolsOpen && activeTool === 'cream-pen'}
+              penDrawMode={toolsOpen && activeTool === 'pen'}
+              penStyle={penStyle}
+              onAddStroke={addStroke}
               selectedStickerIds={selectedStickerIds}
               onStickerSelect={handleStickerSelect}
               onStickerLongPress={handleStickerLongPress}
@@ -3396,7 +3524,6 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             { id: 'dashboard',  icon: <DashboardIcon size={20} /> },
             { id: 'templates',  icon: <TemplatesIcon size={20} /> },
             { id: 'elements',   icon: <ElementsIcon size={20} /> },
-            { id: 'tools',      icon: <ToolsIcon size={20} /> },
             { id: 'text',       icon: <TextIcon size={20} /> },
             { id: 'orders',     icon: <OrdersIcon size={20} /> },
             { id: 'customers',  icon: <CustomersIcon size={20} /> },

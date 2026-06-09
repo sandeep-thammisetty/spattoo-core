@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import helvetikerBold from 'three/examples/fonts/helvetiker_bold.typeface.json';
 import CakeTier from './CakeTier';
 import CreamWriting from './CreamWriting.jsx';
+import CreamPen from './CreamPen.jsx';
 import { Drip, TopFlowers, SideFlowers } from './Decorations';
 import {
   STICKER_SIZE, GOLD_COLOR, SELECTION_COLOR,
@@ -1288,10 +1289,11 @@ function CakeScene({
   pipingToolbar,
   onTopperClick, topperSelected, topperToolbar,
   selectedStickerIds, onStickerSelect, onStickerLongPress, onStickerMove, onGroupMove, stickerToolbar,
-  onWritingClick, writingSelected = false,
+  onWritingClick, onWritingMove, writingSelected = false,
+  penDrawMode = false, penStyle, onAddStroke,
   tierDataRef,
 }) {
-  const { tiers, texts = [], stickers = [], topper = null, writing = null } = config;
+  const { tiers, texts = [], stickers = [], topper = null, writing = null, piping = [] } = config;
   const orbitBlockSet = useRef(new Set());
   const { gl, camera, scene } = useThree();
 
@@ -1308,7 +1310,10 @@ function CakeScene({
       rc.setFromCamera({ x: ndx, y: ndy }, camera);
       const hits = rc.intersectObjects(scene.children, true);
       const overSticker = hits.some(h => h.object.userData.isStickerHitPlane);
-      if (orbitRef.current) orbitRef.current.enabled = !overSticker;
+      // Cream-pen catchers (present only in draw mode): pressing on the cake draws, so
+      // suspend rotate; pressing empty space still rotates.
+      const overPen = hits.some(h => h.object.userData.isPenCatcher);
+      if (orbitRef.current) orbitRef.current.enabled = !overSticker && !overPen;
     }
     canvas.addEventListener('pointerdown', onCaptureDown, { capture: true });
     return () => canvas.removeEventListener('pointerdown', onCaptureDown, { capture: true });
@@ -1400,18 +1405,55 @@ function CakeScene({
         </Suspense>
       )}
 
-      {writing?.text?.trim() && (
-        <CreamWriting
-          writing={writing}
-          topY={stackY}
-          topRadius={tierData[tierData.length - 1].radius}
-          shape={tierData[tierData.length - 1].shape ?? 'round'}
-          width={tierData[tierData.length - 1].width}
-          depth={tierData[tierData.length - 1].depth}
-          onClick={onWritingClick}
-          selected={writingSelected}
-        />
-      )}
+      {writing?.text?.trim() && (() => {
+        const topTier = tierData[tierData.length - 1];
+        const writingOrbitEnable = enabled => {
+          if (enabled) orbitBlockSet.current.delete('__writing__'); else orbitBlockSet.current.add('__writing__');
+          if (orbitRef.current) orbitRef.current.enabled = orbitBlockSet.current.size === 0;
+        };
+        // Board geometry mirrors the board mesh drawn above (round: +0.6 r · rect: +0.9 each side).
+        const isRectBoard = bottomTier.shape === 'rect';
+        const boardRadius = isRectBoard ? Math.max(bottomTier.width + 0.9, bottomTier.depth + 0.9) / 2 : bottomTier.radius + 0.6;
+        const boardShp = isRectBoard
+          ? { kind: 'rect', halfW: (bottomTier.width + 0.9) / 2, halfD: (bottomTier.depth + 0.9) / 2 }
+          : { kind: 'round', radius: bottomTier.radius + 0.6 };
+        return (
+          <CreamWriting
+            writing={writing}
+            topY={stackY}
+            topRadius={topTier.radius}
+            shape={topTier.shape ?? 'round'}
+            width={topTier.width}
+            depth={topTier.depth}
+            shp={tierShape(topTier)}
+            tiers={tierData}
+            boardRadius={boardRadius}
+            boardY={0.1}
+            boardShp={boardShp}
+            onClick={onWritingClick}
+            onMove={onWritingMove}
+            onOrbitEnable={writingOrbitEnable}
+            selected={writingSelected}
+          />
+        );
+      })()}
+
+      <CreamPen
+        piping={piping}
+        drawMode={penDrawMode}
+        penStyle={penStyle}
+        tierData={tierData}
+        board={{
+          shape: bottomTier.shape === 'rect' ? 'rect' : 'round',
+          radius: bottomTier.shape === 'rect'
+            ? Math.max(bottomTier.width + 0.9, bottomTier.depth + 0.9) / 2
+            : bottomTier.radius + 0.6,
+          width: (bottomTier.width ?? 0) + 0.9,
+          depth: (bottomTier.depth ?? 0) + 0.9,
+          y: 0.1,
+        }}
+        onAddStroke={onAddStroke}
+      />
 
       {pipingTarget && (
         <CreamStylePicker styles={pipingStyles} onSelect={onPipingStyleSelect} onCancel={onPipingCancel} />
@@ -1551,7 +1593,7 @@ function CakeScene({
 }
 
 function CakeThumbnailScene({ config }) {
-  const { tiers, stickers = [], topper = null } = config;
+  const { tiers, stickers = [], topper = null, writing = null, piping = [] } = config;
 
   let stackY = 0.1;
   const tierData = tiers.map(tier => {
@@ -1651,6 +1693,36 @@ function CakeThumbnailScene({ config }) {
           </group>
         );
       })}
+
+      {/* Freehand cream-pen strokes — committed only (drawMode off = no catchers/draw). */}
+      <CreamPen piping={piping} />
+
+      {/* Typed cream writing — static (no drag/select handlers). */}
+      {writing?.text?.trim() && (() => {
+        const topTier = tierData[tierData.length - 1];
+        const bottomTier = tierData[0];
+        const isRectBoard = bottomTier.shape === 'rect';
+        const boardRadius = isRectBoard ? Math.max(bottomTier.width + 0.9, bottomTier.depth + 0.9) / 2 : bottomTier.radius + 0.6;
+        const boardShp = isRectBoard
+          ? { kind: 'rect', halfW: (bottomTier.width + 0.9) / 2, halfD: (bottomTier.depth + 0.9) / 2 }
+          : { kind: 'round', radius: bottomTier.radius + 0.6 };
+        return (
+          <CreamWriting
+            writing={writing}
+            topY={stackY}
+            topRadius={topTier.radius}
+            shape={topTier.shape ?? 'round'}
+            width={topTier.width}
+            depth={topTier.depth}
+            shp={tierShape(topTier)}
+            tiers={tierData}
+            boardRadius={boardRadius}
+            boardY={0.1}
+            boardShp={boardShp}
+            selected={false}
+          />
+        );
+      })()}
     </>
   );
 }
@@ -1683,6 +1755,8 @@ export default function CakeCanvas({
   hitTestRef,
   snapCameraRef,
   cameraPosition = CAMERA_POSITION,
+  onWritingClick, onWritingMove, writingSelected = false,
+  penDrawMode = false, penStyle, onAddStroke,
 }) {
   const pointerRef  = useRef({ x: 0, y: 0, dragged: false });
   const orbitRef    = useRef();
@@ -1794,6 +1868,12 @@ export default function CakeCanvas({
         onStickerMove={onStickerMove}
         onGroupMove={onGroupMove}
         stickerToolbar={stickerToolbar}
+        onWritingClick={onWritingClick}
+        onWritingMove={onWritingMove}
+        writingSelected={writingSelected}
+        penDrawMode={penDrawMode}
+        penStyle={penStyle}
+        onAddStroke={onAddStroke}
         tierDataRef={tierDataRef}
       />
       <OrbitControls

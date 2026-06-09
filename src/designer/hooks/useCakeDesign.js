@@ -12,13 +12,26 @@ const DEFAULT_DESIGN = {
   stickers: [],
   topper: null,
   writing: null,   // one cream-pen message piped on the cake top (see CreamWriting)
+  piping: [],      // freehand cream-pen strokes (see CreamPen / creamPen.js)
+};
+
+// One freehand stroke. `points` are the SEATED centerline in cake/world space
+// ([[x,y,z]…]) — the draw layer already offset each hit along the surface normal, so
+// the renderer just sweeps the nozzle profile through them.
+const DEFAULT_STROKE = {
+  nozzle: 'star5', color: '#ffffff', thickness: 0.03, softness: 0.7,
+  tierIndex: null, points: [],
 };
 
 // Cream-pen writing defaults — created the first time the user types a message.
 const DEFAULT_WRITING = {
   text: '', font: 'ems_allure', color: '#ffffff',
   thickness: 0.03, fit: 0.8, softness: 0.7,
+  curve: 0, lineSpacing: 1.4,
+  surface: 'top',            // 'top' | 'side' | 'board'
   yaw: 0, offsetX: 0, offsetZ: 0, lift: 0.02,
+  boardX: undefined, boardZ: undefined,   // board placement (default seeded in CreamWriting)
+  sideAngle: 0, sideY: undefined,         // side placement (default = mid of bottom tier)
 };
 
 // Each piping carries a stable layerId so a tier can hold multiple stacked piping
@@ -330,6 +343,18 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     setDesign(prev => ({ ...prev, writing: null }));
   }
 
+  // Freehand cream-pen strokes. addStroke appends a finished stroke (seeding defaults);
+  // removeStroke undoes the last; clearPiping wipes them all.
+  function addStroke(stroke) {
+    setDesign(prev => ({ ...prev, piping: [...prev.piping, { ...DEFAULT_STROKE, id: crypto.randomUUID(), ...stroke }] }));
+  }
+  function removeStroke() {
+    setDesign(prev => ({ ...prev, piping: prev.piping.slice(0, -1) }));
+  }
+  function clearPiping() {
+    setDesign(prev => ({ ...prev, piping: [] }));
+  }
+
   function resetDesign() {
     setDesign(DEFAULT_DESIGN);
   }
@@ -373,6 +398,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
       stickers: templateDesign.stickers ?? [],
       topper: templateDesign.topper ? { ...templateDesign.topper, scale: templateDesign.topper.scale ?? 1 } : null,
       writing: templateDesign.writing ?? null,
+      piping: templateDesign.piping ?? [],
     });
   }
 
@@ -397,6 +423,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     stickers: design.stickers,
     topper:   design.topper ?? null,
     writing:  design.writing ?? null,
+    piping:   design.piping ?? [],
   }), [design]);
 
   return {
@@ -409,6 +436,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     groupStickers, ungroupStickers, moveGroupStickers,
     setTopper, setTopperScale,
     setWriting, clearWriting,
+    addStroke, removeStroke, clearPiping,
     resetDesign,
     addStickerBatch,
     loadDesign,

@@ -1,46 +1,173 @@
-import { useMemo } from 'react';
+import { useMemo, useRef } from 'react';
+import { useThree } from '@react-three/fiber';
+import * as THREE from 'three';
 import { buildCreamWriting } from '../geometry/creamText.js';
+import { topClamp } from '../geometry/surface.js';
+import { pointerRay, planeHit, cylinderHit } from '../utils/raycasting.js';
 import { creamMaterialProps, PIPING_SOFTNESS_DEFAULT } from './CakeTier.jsx';
 
 const DEG = Math.PI / 180;
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
-// One cream-pen message piped onto the cake TOP. Given the top tier's surface Y, radius
-// and shape, it fits the writing to the top footprint and lays it flat. `writing` is the
-// design.writing object: { text, font, color, thickness, fit, softness, yaw, offsetX, offsetZ, lift }.
+// One cream-pen message piped onto a chosen cake surface. `writing.surface` selects where:
+//   'top'   — flat on the cake top   (placed by offsetX/offsetZ, free-dragged on the top plane)
+//   'board' — flat on the cake board (placed by boardX/boardZ,   free-dragged on the board plane)
+//   'side'  — wrapped around the cake side (placed by sideAngle/sideY, dragged around & up the side)
+// Drag mirrors DraggableTopSticker: grab disables orbit, the message follows the pointer on its
+// surface, and a no-move press is treated as a tap → select.
 export default function CreamWriting({
-  writing, topY, topRadius, shape = 'round', width = 0, depth = 0,
-  onClick, selected = false,
+  writing, topY, topRadius, shape = 'round', width = 0, depth = 0, shp,
+  tiers, boardRadius = 0, boardY = 0.1, boardShp,
+  onClick, onMove, onOrbitEnable, selected = false,
 }) {
+  const { camera, gl } = useThree();
+  const surface   = writing?.surface ?? 'top';
   const fit       = writing?.fit ?? 0.8;
   const thickness = writing?.thickness ?? 0.03;
-  const isRect = shape === 'rect';
-  // Footprint the writing must fit within (world X = text width, world Z = text height).
-  const maxW = (isRect ? width : 2 * topRadius) * fit;
-  const maxH = (isRect ? depth : 2 * topRadius) * fit;
+  const isRect    = shape === 'rect';
+
+  // ── Resolve the target surface's radius / footprint ──────────────────────────
+  const bottom    = tiers?.[0];
+  const cakeBaseR = bottom ? (bottom.shape === 'rect' ? Math.max(bottom.width, bottom.depth) / 2 : bottom.radius) : topRadius;
+  const sideY     = writing?.sideY ?? (bottom ? bottom.baseY + bottom.height / 2 : topY / 2);
+  const sideTier  = tiers?.find(t => sideY >= t.baseY && sideY <= t.baseY + t.height) ?? bottom;
+  const sideRect  = (sideTier?.shape ?? shape) === 'rect';
+  const sideR     = sideTier ? (sideRect ? sideTier.depth / 2 : sideTier.radius) : topRadius;
+  const sideH     = sideTier?.height ?? 1;
+
+  // Footprint the writing must fit within (world units): top/board use the surface extents,
+  // side uses a comfortable arc (≈ fit·2 rad of the side) by tier height.
+  const sideFaceW = sideRect ? (sideTier?.width ?? width) : sideR * 2.0;
+  let maxW, maxH;
+  if (surface === 'side')      { maxW = sideFaceW * fit; maxH = sideH * fit; }
+  else if (surface === 'board'){ maxW = maxH = (boardRadius || topRadius) * 0.9 * fit; }
+  else                         { maxW = (isRect ? width : 2 * topRadius) * fit; maxH = (isRect ? depth : 2 * topRadius) * fit; }
+
+  const wrapRadius = surface === 'side' && !sideRect ? sideR + 0.006 : 0;
 
   const geo = useMemo(() => {
     if (!writing?.text?.trim()) return null;
-    return buildCreamWriting({ text: writing.text, font: writing.font, thickness, maxW, maxH });
-  }, [writing?.text, writing?.font, thickness, maxW, maxH]);
+    return buildCreamWriting({
+      text: writing.text, font: writing.font, thickness, maxW, maxH,
+      lineGap: writing.lineSpacing ?? 1.4, curve: writing.curve ?? 0, wrapRadius,
+    });
+  }, [writing?.text, writing?.font, thickness, maxW, maxH, writing?.lineSpacing, writing?.curve, wrapRadius]);
 
+  const pressedRef = useRef(false);
   if (!geo) return null;
+
   const color = writing.color ?? '#ffffff';
   const lift  = writing.lift ?? 0.02;
+  const yaw   = (writing.yaw ?? 0) * DEG;
+
+  // Resolved placement (per-surface coords, each with a sensible default).
+  const ox        = surface === 'board' ? (writing.boardX ?? 0) : (writing.offsetX ?? 0);
+  const oz        = surface === 'board' ? (writing.boardZ ?? (cakeBaseR + (boardRadius || cakeBaseR)) / 2) : (writing.offsetZ ?? 0);
+  const sideAngle = writing.sideAngle ?? 0;
+  const minSideY  = 0.14, maxSideY = Math.max(minSideY + 0.05, topY - 0.14);
+
+  // Grab proxy size (from the built geometry's extents).
+  const bb = geo.boundingBox;
+  const grabW = Math.max((bb.max.x - bb.min.x) + thickness * 3, thickness * 4);
+  const grabH = Math.max((bb.max.y - bb.min.y) + thickness * 3, thickness * 4);
+
+  const onDown = e => {
+    e.stopPropagation();
+    pressedRef.current = true;
+    onOrbitEnable?.(false);
+    try { gl.domElement.setPointerCapture(e.pointerId); } catch (_) {}
+    let didDrag = false;
+    const start = { x: e.clientX, y: e.clientY };
+    const canvas = gl.domElement;
+    function move(ev) {
+      const dx = ev.clientX - start.x, dy = ev.clientY - start.y;
+      if (dx * dx + dy * dy > 25) didDrag = true;
+      if (!didDrag || !onMove) return;
+      const ray = pointerRay(ev, canvas, camera);
+      if (surface === 'side' && !sideRect) {
+        const hit = cylinderHit(ray, sideR);
+        if (!hit) return;
+        onMove({ sideAngle: hit.theta, sideY: clamp(hit.y, minSideY, maxSideY) });
+      } else if (surface === 'side') {
+        // Rect side: intersect the front face plane (z = depth/2), drag in x & y.
+        const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), -(sideR));
+        const t = new THREE.Vector3();
+        if (!ray.intersectPlane(plane, t)) return;
+        onMove({ offsetX: clamp(t.x, -sideTier.width / 2, sideTier.width / 2), sideY: clamp(t.y, minSideY, maxSideY) });
+      } else {
+        const planeY = surface === 'board' ? boardY : topY;
+        const hit = planeHit(ray, new THREE.Plane(new THREE.Vector3(0, 1, 0), -planeY));
+        if (!hit) return;
+        const cs = surface === 'board' ? (boardShp ?? shp) : shp;
+        const p = cs ? topClamp(cs, hit.x, hit.z, 1.0) : hit;
+        onMove(surface === 'board' ? { boardX: p.x, boardZ: p.z } : { offsetX: p.x, offsetZ: p.z });
+      }
+    }
+    function up(ev) {
+      pressedRef.current = false;
+      onOrbitEnable?.(true);
+      if (!didDrag && onClick) onClick(ev);
+      canvas.removeEventListener('pointermove', move);
+      canvas.removeEventListener('pointerup', up);
+    }
+    canvas.addEventListener('pointermove', move);
+    canvas.addEventListener('pointerup', up);
+  };
+
+  const material = (
+    <meshPhysicalMaterial
+      {...creamMaterialProps(writing.softness ?? PIPING_SOFTNESS_DEFAULT, color)}
+      emissive={selected ? '#6c47ff' : '#000000'}
+      emissiveIntensity={selected ? 0.35 : 0}
+    />
+  );
+  const grabProps = {
+    userData: { isStickerHitPlane: true },
+    onPointerEnter: e => { e.stopPropagation(); onOrbitEnable?.(false); },
+    onPointerLeave: e => { e.stopPropagation(); if (!pressedRef.current) onOrbitEnable?.(true); },
+    onPointerDown: onDown,
+    onClick: e => e.stopPropagation(),
+  };
+  const grabPlane = (z = 0.005) => (
+    <mesh position={[0, 0, z]} {...grabProps}>
+      <planeGeometry args={[grabW, grabH]} />
+      <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+    </mesh>
+  );
+
+  // ── Side: geometry is already wrapped & vertical, centred on +Z. Rotate around Y
+  // to the drag angle, raise to the drag height. ──────────────────────────────────
+  if (surface === 'side' && !sideRect) {
+    return (
+      <group rotation={[0, sideAngle, 0]}>
+        <group position={[0, sideY, 0]}>
+          <mesh geometry={geo} castShadow>{material}</mesh>
+          {/* tangent grab plane just in front of the wrapped text */}
+          <mesh position={[0, 0, bb.max.z + 0.01]} {...grabProps}>
+            <planeGeometry args={[grabW, grabH]} />
+            <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+          </mesh>
+        </group>
+      </group>
+    );
+  }
+  if (surface === 'side') {
+    // Rect cake: flat decal on the front face (faces +Z, text already upright).
+    return (
+      <group position={[writing.offsetX ?? 0, sideY, sideR + lift]}>
+        <mesh geometry={geo} castShadow>{material}</mesh>
+        {grabPlane(bb.max.z + 0.01)}
+      </group>
+    );
+  }
+
+  // ── Top / Board: lay the XY text flat onto the horizontal plane. ────────────────
+  const baseY = surface === 'board' ? boardY + 0.006 : topY + lift;
   return (
-    // outer: place + yaw on the top surface · inner: lay the XY text flat onto XZ
-    <group
-      position={[writing.offsetX ?? 0, topY + lift, writing.offsetZ ?? 0]}
-      rotation={[0, (writing.yaw ?? 0) * DEG, 0]}
-      onClick={onClick ? (e => { e.stopPropagation(); onClick(e); }) : undefined}
-    >
+    <group position={[ox, baseY, oz]} rotation={[0, yaw, 0]}>
       <group rotation={[-Math.PI / 2, 0, 0]}>
-        <mesh geometry={geo} castShadow>
-          <meshPhysicalMaterial
-            {...creamMaterialProps(writing.softness ?? PIPING_SOFTNESS_DEFAULT, color)}
-            emissive={selected ? '#6c47ff' : '#000000'}
-            emissiveIntensity={selected ? 0.35 : 0}
-          />
-        </mesh>
+        <mesh geometry={geo} castShadow>{material}</mesh>
+        {grabPlane()}
       </group>
     </group>
   );
