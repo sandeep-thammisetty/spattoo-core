@@ -1,36 +1,55 @@
 import { useState, useEffect, useCallback, Fragment } from 'react';
 import XrayReport from './xray/XrayReport.jsx';
 
-function XrayGlyph() {
+const XrayGlyph = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+    <circle cx="11" cy="11" r="7" /><line x1="16.5" y1="16.5" x2="21" y2="21" />
+  </svg>
+);
+const Cube3D = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" strokeLinecap="round">
+    <path d="M12 2.6 L20.5 7 L20.5 17 L12 21.4 L3.5 17 L3.5 7 Z" /><path d="M3.5 7 L12 11.5 L20.5 7" /><path d="M12 11.5 L12 21.4" />
+  </svg>
+);
+const LockGlyph = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+    <rect x="5" y="11" width="14" height="9" rx="2" /><path d="M8 11 V8 a4 4 0 0 1 8 0 V11" />
+  </svg>
+);
+const PencilGlyph = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+  </svg>
+);
+
+// Icon + label control — matches the "Edit Details" button: white, light border,
+// grey icon + text. No colour fill. Used for the cake-panel actions.
+function IconAction({ glyph, label, onClick, disabled }) {
   return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
-      <circle cx="11" cy="11" r="7" />
-      <line x1="16.5" y1="16.5" x2="21" y2="21" />
-    </svg>
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      title={label}
+      style={{
+        display: 'inline-flex', alignItems: 'center', gap: 7,
+        padding: '9px 16px', borderRadius: 10,
+        border: '1.5px solid #E0DDD8', background: '#fff',
+        fontSize: 13, fontWeight: 700, color: '#444', fontFamily: 'inherit',
+        cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.5 : 1, whiteSpace: 'nowrap',
+      }}
+    >
+      {glyph} {label}
+    </button>
   );
 }
 
-// "X-Ray" launcher — a prominent on-brand pill that opens the full-screen report
-// (how to make the order's cake). Positioned by the parent via `style`.
-function XrayLauncher({ order, apiClient, primaryColor = '#1a1a1a', style }) {
+// X-Ray launcher — an icon+label action that opens the report.
+function XrayLauncher({ order, apiClient }) {
   const [open, setOpen] = useState(false);
   if (!order?.design_snapshot) return null;
   return (
     <>
-      <button
-        onClick={() => setOpen(true)}
-        title="X-Ray — how to make this cake"
-        style={{
-          display: 'inline-flex', alignItems: 'center', gap: 7,
-          padding: '10px 16px', borderRadius: 999, cursor: 'pointer', fontFamily: 'inherit',
-          border: 'none', background: primaryColor, color: '#fff',
-          fontSize: 13, fontWeight: 800, letterSpacing: 0.2, whiteSpace: 'nowrap',
-          boxShadow: '0 3px 10px rgba(0,0,0,0.20)',
-          ...style,
-        }}
-      >
-        <XrayGlyph /> X-Ray report
-      </button>
+      <IconAction glyph={<XrayGlyph />} label="X-Ray report" onClick={() => setOpen(true)} />
       {open && <XrayReport order={order} apiClient={apiClient} onClose={() => setOpen(false)} />}
     </>
   );
@@ -333,28 +352,18 @@ function OrderDetail({ order, onEditDesign, onStatusChange, onOrderEdited, apiCl
 
   const isDelivered = order.status === 'delivered';
   const editBtn = isDelivered ? (
-    <div style={{
-      padding: '13px', borderRadius: 14, background: '#F0FDF4',
-      border: '1.5px solid #BBF7D0', color: '#14532D',
-      fontSize: 13, fontWeight: 700, fontFamily: 'inherit',
-      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, width: '100%',
-    }}>
-      ✓ Delivered — design locked
-    </div>
+    <IconAction glyph={<LockGlyph />} label="Design locked" disabled />
   ) : (
-    <button
-      onClick={() => onEditDesign(order)}
-      disabled={!order.design_snapshot}
-      style={{
-        padding: '13px', borderRadius: 14, border: 'none',
-        fontSize: 14, fontWeight: 700, cursor: order.design_snapshot ? 'pointer' : 'not-allowed',
-        background: order.design_snapshot ? primaryColor : '#e0e0e0',
-        color: '#fff', fontFamily: 'inherit',
-        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-        opacity: order.design_snapshot ? 1 : 0.5, width: '100%',
-      }}>
-      <PencilIcon size={15} /> Edit Design in 3D
-    </button>
+    <IconAction glyph={<Cube3D />} label="Edit in 3D" onClick={() => onEditDesign(order)} disabled={!order.design_snapshot} />
+  );
+
+  // The cake-panel actions, side by side below the cake.
+  const cakeActions = (
+    <div style={{ display: 'flex', gap: 12, justifyContent: 'center', alignItems: 'center', flexWrap: 'wrap' }}>
+      <XrayLauncher order={order} apiClient={apiClient} />
+      {editBtn}
+      {!editing && <IconAction glyph={<PencilGlyph />} label="Edit Details" onClick={() => setEditing(true)} />}
+    </div>
   );
 
   // ── Mobile: stacked layout ────────────────────────────────────────────────
@@ -377,20 +386,10 @@ function OrderDetail({ order, onEditDesign, onStatusChange, onOrderEdited, apiCl
               </div>
           }
         </div>
-        <XrayLauncher order={order} apiClient={apiClient} primaryColor={primaryColor} style={{ display: 'flex', width: '100%', justifyContent: 'center', marginBottom: 12 }} />
-        <div style={{ marginBottom: 20 }}>{editBtn}</div>
+        <div style={{ marginBottom: 20 }}>{cakeActions}</div>
         {editing
           ? <EditForm order={order} onSave={handleSaveEdit} onCancel={() => { setEditing(false); setSaveError(null); }} saving={saving} serverError={saveError} homeDeliveryEnabled={homeDeliveryEnabled} />
           : <>
-              <button onClick={() => setEditing(true)} style={{
-                marginBottom: 16, padding: '11px 16px', borderRadius: 10,
-                border: '1.5px solid #E0DDD8', background: '#fff',
-                fontSize: 14, fontWeight: 700, color: '#444',
-                cursor: 'pointer', fontFamily: 'inherit', width: '100%',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-              }}>
-                <PencilIcon size={14} /> Edit Details
-              </button>
               <StatusProgress status={order.status} onChange={handleStatus} disabled={changingStatus} />
               <DetailSections order={order} name={name} flavours={flavours} delivDate={delivDate} />
               <Section title="History">
@@ -426,8 +425,7 @@ function OrderDetail({ order, onEditDesign, onStatusChange, onOrderEdited, apiCl
               </div>
           }
         </div>
-        <XrayLauncher order={order} apiClient={apiClient} primaryColor={primaryColor} style={{ display: 'flex', width: '100%', justifyContent: 'center' }} />
-        {editBtn}
+        {cakeActions}
       </div>
 
       {/* Right: details */}
@@ -435,15 +433,6 @@ function OrderDetail({ order, onEditDesign, onStatusChange, onOrderEdited, apiCl
         {editing
           ? <EditForm order={order} onSave={handleSaveEdit} onCancel={() => { setEditing(false); setSaveError(null); }} saving={saving} serverError={saveError} homeDeliveryEnabled={homeDeliveryEnabled} />
           : <>
-              <button onClick={() => setEditing(true)} style={{
-                marginBottom: 20, padding: '9px 16px', borderRadius: 10,
-                border: '1.5px solid #E0DDD8', background: '#fff',
-                fontSize: 13, fontWeight: 700, color: '#444',
-                cursor: 'pointer', fontFamily: 'inherit',
-                display: 'flex', alignItems: 'center', gap: 6,
-              }}>
-                <PencilIcon size={13} /> Edit Details
-              </button>
               <StatusProgress status={order.status} onChange={handleStatus} disabled={changingStatus} />
               <DetailSections order={order} name={name} flavours={flavours} delivDate={delivDate} />
               <Section title="History">
