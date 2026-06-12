@@ -15,6 +15,7 @@ import {
 } from '../constants.js';
 import { pointerRay, cylinderHit, planeHit, buildRay } from '../utils/raycasting.js';
 import { tierShape, topClamp, topContains, boxHit, nearestU, rectSidePlacement, perimeter, boundingRadius } from '../geometry/surface.js';
+import { hugScale, isDynamicHug, wallClampY, DEFAULT_HUG_FILL } from '../placement.js';
 
 function darkenHex(hex, amount) {
   if (!hex || !hex.startsWith('#')) return '#888';
@@ -470,7 +471,13 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
     yaw = sticker.theta; curveRadius = surfaceR;
   }
   const isGlb = /\.(glb|gltf)(\?|$)/i.test(sticker.imageUrl ?? '');
-  const effScale = sticker.scale ?? 1;   // user-controlled; not clamped (like piping size)
+  // A hero hug (single_per_slot, hugging a side) sizes to THIS tier's wall height, so it shrinks
+  // on smaller tiers automatically — r is the stand size only and is ignored here. Scattered decor
+  // (not single_per_slot) keeps its absolute r. `hugMul` is the per-instance +/- nudge (default 1);
+  // we never persist the computed scale, only this multiplier + the static hugFill.
+  const effScale = isDynamicHug(sticker)
+    ? hugScale(height, STICKER_SIZE, sticker.hugFill ?? DEFAULT_HUG_FILL) * (sticker.hugMul ?? 1)
+    : (sticker.scale ?? 1);   // user-controlled; not clamped (like piping size)
   // Round cakes: bend a GLB sticker around the tier wall so it hugs the curve.
   // Local radius = surfaceR / group scale, so after the group's scale it wraps at
   // the true wall radius (bigger stickers span more arc → curve more).
@@ -478,9 +485,15 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
     ? curveRadius / (effScale || 1)
     : undefined;
 
+  // Keep the decal on the cake wall: sticker.y is its CENTRE, so its bottom edge sits half a
+  // (scaled) sticker below it. Clamp so the bottom never crosses the tier base into the board.
+  const halfH = (STICKER_SIZE / 2) * effScale;
+  const clampWallY = y => wallClampY(y, baseY, height, halfH);
+  const posY = clampWallY(sticker.y);
+
   return (
     <group
-      position={[cx, sticker.y, cz]}
+      position={[cx, posY, cz]}
       rotation={[0, yaw, 0]}
       scale={effScale}
     >
@@ -521,7 +534,7 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
           }
 
           const canvas = gl.domElement;
-          const clampY = y => Math.max(baseY + 0.05, Math.min(baseY + height - 0.05, y));
+          const clampY = clampWallY;   // keep the bottom edge on the wall, not in the board
           function onMoveHandler(ev) {
             const dx = ev.clientX - startPos.current.x;
             const dy = ev.clientY - startPos.current.y;

@@ -1,6 +1,34 @@
 // Pure, config-driven placement logic — no React, no element-type branching. The designer and
 // the contract test both use these so behaviour can't silently diverge per element type.
-import { ZONES } from './constants.js';
+import { ZONES, PLACEMENT_MODES } from './constants.js';
+
+// Default fraction of a tier's wall height a side-hug HERO decoration fills. Tunable per
+// element via placement_config.hug_fill.
+export const DEFAULT_HUG_FILL = 0.7;
+
+// Render-time size for a side-hug hero decoration: it fills `fill` of the tier WALL HEIGHT,
+// independent of placement_config.r (which stays the absolute size for `stand`). Pure so the
+// contract test pins the formula; `stickerSize` is the renderer's normalized base (a model is
+// normalized to stickerSize, then multiplied by this scale).
+export function hugScale(wallHeight, stickerSize, fill = DEFAULT_HUG_FILL) {
+  return (wallHeight * fill) / stickerSize;
+}
+
+// Keep a side decal's CENTRE y so its (scaled) bottom edge never crosses the tier base into the
+// board. If the decal is taller than the wall (enlarged a lot), let it overflow UPWARD only —
+// never down into the board. halfH = half the rendered sticker height.
+export function wallClampY(y, baseY, wallHeight, halfH) {
+  const lo = baseY + halfH;
+  const hi = baseY + wallHeight - halfH;
+  return hi >= lo ? Math.min(Math.max(y, lo), hi) : lo;
+}
+
+// A placed decoration whose size should track the tier wall (vs. absolute r): hero element
+// (single_per_slot) hugging a surface. Scattered decor (NOT single_per_slot) keeps its own r
+// so many small stickers don't each balloon to wall height. Config/mode-driven, never by type.
+export function isDynamicHug(sticker) {
+  return sticker?.singlePerSlot === true && sticker?.placementMode === PLACEMENT_MODES.HUG;
+}
 
 // A "hero" element places exactly ONE instance per (tier × surface) slot, chosen via the
 // placement chooser's checkboxes. Everything else scatters freely as many dragged stickers.

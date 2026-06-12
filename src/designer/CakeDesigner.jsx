@@ -6,7 +6,7 @@ import { cfImg } from './utils/imageUtils';
 import { CAMERA_POSITION, CAMERA_POSITION_MOBILE, PIPING_FRONT_ANGLE, TIER_RADII, BOTTOM_H, BOTTOM_BASE, BEND_ANCHOR_FRAC, ELEMENT_SLUGS, ZONES, PLACEMENT_MODES } from './constants';
 import PipingPreview from './canvas/PipingPreview.jsx';
 import TopperPreview from './canvas/TopperPreview.jsx';
-import { isSinglePerSlot, placementSlots } from './placement.js';
+import { isSinglePerSlot, placementSlots, isDynamicHug } from './placement.js';
 import { SHELL_HEIGHT_FRAC, getShellExtents, getFestoonExtents, festoonSig } from './canvas/pipingMetrics.js';
 import { useCakeDesign } from './hooks/useCakeDesign';
 import { CREAM_FONTS, DEFAULT_CREAM_FONT, creamFontPreview } from './geometry/creamText.js';
@@ -467,7 +467,11 @@ function PlacementChooser({ previewUrl, tiers, baseRotation = null, slots = [], 
             {slot.sticker && (
               <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'center', gap: 22, marginTop: 8 }}>
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
-                  <SizeDial size={slot.sticker.scale ?? 1} min={0.5} max={8} step={0.1} onChange={v => onUpdate(slot.sticker.id, { scale: v })} />
+                  {/* Hero hug auto-sizes to the tier wall; the dial nudges a multiplier (hugMul,
+                      default 1×) rather than an absolute scale. Stand uses absolute scale (r). */}
+                  {isDynamicHug(slot.sticker)
+                    ? <SizeDial size={slot.sticker.hugMul ?? 1} min={0.3} max={3} step={0.05} onChange={v => onUpdate(slot.sticker.id, { hugMul: v })} />
+                    : <SizeDial size={slot.sticker.scale ?? 1} min={0.5} max={8} step={0.1} onChange={v => onUpdate(slot.sticker.id, { scale: v })} />}
                   <span style={cap}>Size</span>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, paddingBottom: 4 }}>

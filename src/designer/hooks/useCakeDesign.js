@@ -268,6 +268,11 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
           zone,
           tierIndex:     tierIndex ?? 0,
           placementMode: placementMode ?? 'hug',
+          // Static config copies (like placementMode/baseRotation) — NOT a computed scale.
+          // A hero hug derives its size from the tier wall at render time (isDynamicHug);
+          // hugFill tunes that fraction. Scattered decor leaves singlePerSlot falsy → keeps r.
+          singlePerSlot: element.placement_config?.single_per_slot === true,
+          hugFill:       element.placement_config?.hug_fill ?? null,
           u:             position.u ?? null,   // rect side: perimeter fraction (round uses theta)
           theta:         (placementMode === PLACEMENT_MODES.FAUX_BALL_SINGLE && (zone === ZONES.SIDE || zone === ZONES.MIDDLE_TIER)) ? px : (position.theta ?? 0),
           y:             (placementMode === PLACEMENT_MODES.FAUX_BALL_SINGLE && (zone === ZONES.SIDE || zone === ZONES.MIDDLE_TIER)) ? pz : (position.y ?? (BOTTOM_BASE + BOTTOM_H * 0.45)),
