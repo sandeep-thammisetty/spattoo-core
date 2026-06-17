@@ -239,29 +239,45 @@ function ColorWheel({ color, onChange, cakeColors = [], width = 216 }) {
 //   modes      : which directions to offer (default all three); a single entry fixes the direction
 //                and hides the toggle (the cake base is vertical-only).
 //   balance    : 0..1 blend bias (0.5 = even). Omit to hide the balance slider (sticker/piping today).
+//   pending    : when true the LAST entry in `stops` is an empty placeholder (a null) — the user
+//                clicked "+" but hasn't picked its colour yet. It renders as a dashed "pick a colour"
+//                chip and isn't a real stop, so direction/balance stay hidden until it's filled.
 const MODE_LABELS = { swirl: 'Swirl', vertical: 'Vertical', linear: 'Linear' };
 function GradientControls({ stops, activeStop, mode, onSelectStop, onAddStop, onRemoveStop, onModeChange,
-                            modes = ['swirl', 'vertical', 'linear'], balance, onBalanceChange }) {
+                            modes = ['swirl', 'vertical', 'linear'], balance, onBalanceChange, pending = false }) {
+  const realCount = stops.length - (pending ? 1 : 0);   // gradient is "real" only with ≥2 filled stops
   return (
     <div style={s.gradientBlock}>
       <div style={s.gradientLabel}>Gradient colors</div>
       <div style={s.gradientStops}>
-        {stops.map((c, i) => (
-          <div key={i} style={s.gradientStopWrap}>
-            <div onClick={() => onSelectStop(i)} title={`Stop ${i + 1}`}
-              style={{ ...s.gradientStop, background: c,
-                border: i === activeStop ? '2.5px solid #1a1a1a' : '1.5px solid #999999' }} />
-            {stops.length > 1 && (
-              <button style={s.gradientStopRemove} title="Remove color"
-                onClick={() => onRemoveStop(i)}>×</button>
-            )}
-          </div>
-        ))}
-        {stops.length < 3 && (
+        {stops.map((c, i) => {
+          const isPlaceholder = pending && i === stops.length - 1;
+          return (
+            <div key={i} style={s.gradientStopWrap}>
+              <div onClick={() => onSelectStop(i)} title={isPlaceholder ? 'Pick a color' : `Stop ${i + 1}`}
+                style={{ ...s.gradientStop,
+                  ...(isPlaceholder
+                    ? { background: 'conic-gradient(red,yellow,lime,aqua,blue,magenta,red)', opacity: 0.55,
+                        borderStyle: 'dashed', borderWidth: i === activeStop ? 2.5 : 2,
+                        borderColor: i === activeStop ? '#1a1a1a' : '#999999' }
+                    : { background: c, border: i === activeStop ? '2.5px solid #1a1a1a' : '1.5px solid #999999' }) }} />
+              {!isPlaceholder && stops.length > 1 && (
+                <button style={s.gradientStopRemove} title="Remove color"
+                  onClick={() => onRemoveStop(i)}>×</button>
+              )}
+            </div>
+          );
+        })}
+        {!pending && stops.length < 3 && (
           <button style={s.gradientStopAdd} title="Add color" onClick={onAddStop}>+</button>
         )}
       </div>
-      {stops.length >= 2 && modes.length > 1 && (
+      {pending && (
+        <div style={{ fontSize: 10.5, fontWeight: 700, color: '#6c47ff', marginTop: 4 }}>
+          Pick a color for the new stop
+        </div>
+      )}
+      {realCount >= 2 && modes.length > 1 && (
         <div style={s.gradientModes}>
           {modes.map(m => (
             <button key={m} onClick={() => onModeChange(m)}
@@ -271,7 +287,7 @@ function GradientControls({ stops, activeStop, mode, onSelectStop, onAddStop, on
           ))}
         </div>
       )}
-      {stops.length >= 2 && balance != null && (
+      {realCount >= 2 && balance != null && (
         <div style={{ marginTop: 10 }}>
           <div style={s.gradientLabel}>Balance</div>
           <input type="range" min={0.2} max={0.8} step={0.01} value={balance}
@@ -960,6 +976,10 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
   // Which gradient stop the colour wheel is currently editing (0-based). Only meaningful when the
   // selected element is gradient-eligible (caps.gradient) and has ≥2 stops.
   const [gradStop, setGradStop] = useState(0);
+  // True while the user has clicked "+" to add a stop but hasn't picked its colour yet. The new stop
+  // is shown as an EMPTY placeholder chip (not a copy of the last colour) and isn't written to the
+  // design until a colour is chosen — so adding a stop never silently duplicates a colour.
+  const [gradPending, setGradPending] = useState(false);
   // Full sticker selection set (drives canvas highlight + group ops)
   const [selectedStickerIds, setSelectedStickerIds] = useState(new Set());
   // True when user entered multi-select via long-press (mobile) or Ctrl+click (desktop)
@@ -2505,7 +2525,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // Tiers blend vertically (ombre up the wall); elements default to swirl. A saved mode always wins.
   const gradMode = gradTarget?.gradient?.mode ?? (isTierGradient ? 'vertical' : 'swirl');
   const gradBalance = gradTarget?.gradient?.balance ?? 0.5;
-  const activeStop = Math.min(gradStop, Math.max(0, gradStops.length - 1));
+  // Reset the pending-stop affordance when the selection changes, so an unfinished "+" on one tier
+  // doesn't carry over to the next.
+  const gradSelKey = `${selectedEl?.type ?? ''}:${selectedEl?.index ?? selectedEl?.id ?? ''}`;
+  useEffect(() => { setGradPending(false); setGradStop(0); }, [gradSelKey]);
+  // Chips the popup shows: the real stops, plus one empty placeholder while a "+" add is pending.
+  const gradStopsView = gradPending ? [...gradStops, null] : gradStops;
+  const activeStop = gradPending
+    ? gradStops.length                                   // the placeholder slot
+    : Math.min(gradStop, Math.max(0, gradStops.length - 1));
   // The colour the wheel edits: the active stop when eligible, else the normal single colour.
   const wheelColor = (gradientEligible && !activeGroupKey) ? (gradStops[activeStop] ?? '#ffffff') : currentColor;
 
@@ -2524,6 +2552,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     // Editing a recompose part-group is always a solid per-group colour, never a gradient.
     if (activeGroupKey) { handleColorChange(c); return; }
     if (!gradientEligible) { handleColorChange(c); return; }
+    // Filling a pending (empty) stop: append it now — this is what turns a solid colour into a
+    // gradient, or adds a 3rd stop. No colour is ever auto-copied.
+    if (gradPending) {
+      const next = [...gradStops, c];
+      setGradPending(false);
+      setGradStop(next.length - 1);
+      writeGradient(next);
+      return;
+    }
     const next = gradStops.slice();
     next[activeStop] = c;
     // 1 stop is just the solid colour; route through the normal colour path (tier or sticker).
@@ -2535,12 +2572,19 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     writeGradient(next);
   }
   function addGradStop() {
-    if (gradStops.length >= 3) return;
-    const next = [...gradStops, gradStops[gradStops.length - 1]];  // seed from the last stop
-    writeGradient(next);
-    setGradStop(next.length - 1);
+    if (gradStops.length >= 3 || gradPending) return;
+    // Show an empty placeholder stop and wait for the user to pick its colour (handleWheelChange) —
+    // don't duplicate the last colour, which looked like "nothing happened".
+    setGradPending(true);
+    setGradStop(gradStops.length);
+  }
+  // Select a chip: picking a real stop cancels a pending placeholder; the placeholder itself keeps it.
+  function selectGradStop(i) {
+    if (gradPending && i < gradStops.length) setGradPending(false);
+    setGradStop(i);
   }
   function removeGradStop(i) {
+    setGradPending(false);
     writeGradient(gradStops.filter((_, idx) => idx !== i));
     setGradStop(0);
   }
@@ -3882,8 +3926,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   GradientControls component (also used by the piping popup). */}
               {gradientEligible && (colorOpen || tierPanelVisible) && !activeGroupKey && (
                 <GradientControls
-                  stops={gradStops} activeStop={activeStop} mode={gradMode}
-                  onSelectStop={setGradStop}
+                  stops={gradStopsView} activeStop={activeStop} mode={gradMode} pending={gradPending}
+                  onSelectStop={selectGradStop}
                   onAddStop={addGradStop}
                   onRemoveStop={removeGradStop}
                   onModeChange={m => writeGradient(gradStops, m)}
