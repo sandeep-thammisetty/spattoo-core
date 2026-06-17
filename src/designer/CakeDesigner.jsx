@@ -1050,6 +1050,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
   // Server-resolved capabilities (from /api/me). null = not loaded / host app
   // doesn't expose it → default to full access so existing baker apps are unchanged.
   const [capabilities, setCapabilities] = useState(null);
+  const [role, setRole] = useState(null);  // principal role from /me (e.g. 'customer'); null = unknown
   const [windowWidth, setWindowWidth] = useState(() => (typeof window !== 'undefined' ? window.innerWidth : 1280));
   const [mobilePanelHeight, setMobilePanelHeight] = useState(260);
   const settingsRef      = useRef(null);
@@ -1087,7 +1088,7 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
 
   useEffect(() => {
     if (apiClient?.fetchMe) {
-      apiClient.fetchMe().then(me => setCapabilities(me?.capabilities ?? null)).catch(() => {});
+      apiClient.fetchMe().then(me => { setCapabilities(me?.capabilities ?? null); setRole(me?.role ?? null); }).catch(() => {});
     }
   }, [apiClient]);
 
@@ -3387,7 +3388,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                     {userData?.email && <div style={s.dropdownEmail}>{userData.email}</div>}
                   </div>
                   <div style={s.dropdownDivider} />
-                  <button style={s.dropdownItem} onClick={() => { setChangePasswordModal(true); setProfileOpen(false); }}>Change Password</button>
+                  {role !== 'customer' && <button style={s.dropdownItem} onClick={() => { setChangePasswordModal(true); setProfileOpen(false); }}>Change Password</button>}
                   <button style={s.dropdownItem} onClick={() => { apiClient?.signOut?.() ?? supabase?.auth.signOut(); setProfileOpen(false); }}>Sign out</button>
                 </div>
               )}
@@ -3505,10 +3506,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                     {userData?.email && <div style={s.dropdownEmail}>{userData.email}</div>}
                   </div>
                   <div style={s.dropdownDivider} />
-                  <button style={s.dropdownItem}
+                  {role !== 'customer' && <button style={s.dropdownItem}
                     onClick={() => { setChangePasswordModal(true); setProfileOpen(false); }}>
                     Change Password
-                  </button>
+                  </button>}
                   <button style={s.dropdownItem}
                     onClick={() => { apiClient?.signOut?.() ?? supabase?.auth.signOut(); setProfileOpen(false); }}>
                     Sign out
@@ -4587,11 +4588,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             onClick={handleOrder}>
             {editingOrder ? 'Update Design' : 'Order This Cake'}
           </button>
-          <button
+          {hasCap('template:manage') && <button
             style={{ ...s.orderBtn, ...brandBtn, width: 'auto', flex: 1, whiteSpace: 'nowrap', opacity: 0.75, ...(isMobile ? { padding: '10px', fontSize: 13 } : { padding: '9px 16px', fontSize: 13 }) }}
             onClick={() => setSaveModal(true)}>
             Save as Template
-          </button>
+          </button>}
         </div>
       )}
 
