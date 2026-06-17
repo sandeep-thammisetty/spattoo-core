@@ -101,6 +101,24 @@ export default function CustomerStorefront({
         <p style={s.comingSoon}>Featured cakes coming soon.</p>
       </section>
 
+      {/* DUMMY testimonials — placeholder design only; real data flow comes later. */}
+      <section style={s.section}>
+        <h2 style={s.sectionTitle}>Loved by our customers</h2>
+        <div style={s.testimonials}>
+          {[
+            { quote: "The 3D designer let me get exactly the cake I pictured for my daughter's birthday — and it looked even better in person!", author: "Priya S.", occasion: "Birthday" },
+            { quote: "Seeing the cake in 3D before ordering gave me total confidence. Beautiful work and absolutely delicious.", author: "Rahul M.", occasion: "Anniversary" },
+            { quote: "From design to delivery the whole thing was seamless — so responsive, and the cake was stunning. Highly recommend!", author: "Aisha K.", occasion: "Wedding" },
+          ].map((t, i) => (
+            <figure key={i} style={s.testimonialCard}>
+              <div style={s.stars}>★★★★★</div>
+              <blockquote style={s.quote}>“{t.quote}”</blockquote>
+              <figcaption style={s.author}>{t.author} <span style={s.occasion}>· {t.occasion}</span></figcaption>
+            </figure>
+          ))}
+        </div>
+      </section>
+
       {(ig || baker.website_url) && (
         <footer style={s.footer}>
           {ig && <a style={s.footerLink} href={`https://instagram.com/${ig}`} target="_blank" rel="noreferrer">@{ig}</a>}
@@ -229,6 +247,12 @@ function styles(primary, accent) {
     gallery:     { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 },
     galleryTile: { aspectRatio: '1 / 1', borderRadius: 14, background: '#fff', border: '1.5px dashed #C5D4C8' },
     comingSoon:  { fontSize: 13, fontWeight: 600, color: '#9BB5A2', marginTop: 10, textAlign: 'center' },
+    testimonials:    { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14 },
+    testimonialCard: { background: '#fff', border: '1.5px solid #EDE7E0', borderRadius: 14, padding: '18px', margin: 0, textAlign: 'left', display: 'flex', flexDirection: 'column', gap: 8 },
+    stars:           { color: accent, fontSize: 14, letterSpacing: 2 },
+    quote:           { margin: 0, fontSize: 14, fontWeight: 500, lineHeight: 1.6, color: '#3C4A40' },
+    author:          { fontSize: 13, fontWeight: 700, color: primary },
+    occasion:        { fontWeight: 600, color: '#9BB5A2' },
     footer:      { marginTop: 48, display: 'flex', gap: 20 },
     footerLink:  { fontSize: 14, fontWeight: 700, color: primary, textDecoration: 'none' },
   };
