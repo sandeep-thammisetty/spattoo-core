@@ -132,21 +132,33 @@ const params = new URLSearchParams(window.location.search);
 const storefrontSlug = subdomainSlug
   || (path === '/storefront' ? (params.get('slug') || 'feelings-flavours') : null);
 
+// Customer app: storefront → (after OTP) the design space, in customer mode.
+// The authed apiClient carries the customer's session, so the designer's calls go
+// out as the customer (nav is capability-gated to design-only via /me).
+// In production, spattoo-web mounts this same pair behind the baker subdomain.
+function CustomerApp({ slug, inviteId }) {
+  const [authed, setAuthed] = React.useState(false);
+  if (authed) {
+    return <CakeDesigner apiClient={apiClient} supabase={supabase} onOrder={({ design }) => console.log('Order:', design)} />;
+  }
+  return (
+    <CustomerStorefront
+      slug={slug}
+      inviteId={inviteId}
+      apiBaseUrl={API_URL}
+      supabase={supabase}
+      onStartDesign={(b) => console.log('Start design for', b.slug)}
+      onAuthenticated={() => setAuthed(true)}
+    />
+  );
+}
+
 if (storefrontSlug) {
-  const inviteId = params.get('invite');
-  const slug = storefrontSlug;
   const container = document.getElementById('root');
   if (!container._reactRoot) container._reactRoot = ReactDOM.createRoot(container);
   container._reactRoot.render(
     <React.StrictMode>
-      <CustomerStorefront
-        slug={slug}
-        inviteId={inviteId}
-        apiBaseUrl={API_URL}
-        supabase={supabase}
-        onStartDesign={(b) => console.log('Start design for', b.slug)}
-        onAuthenticated={(s) => console.log('Authenticated! session:', s)}
-      />
+      <CustomerApp slug={storefrontSlug} inviteId={params.get('invite')} />
     </React.StrictMode>
   );
 }
