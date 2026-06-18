@@ -43,6 +43,7 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
   const [published, setPublished] = useState(!!value?.storefront_published);
   const [customizations, setCustomizations] = useState(value?.storefront_customizations || {});
   const [publishing, setPublishing] = useState(false);
+  const [mobileTab, setMobileTab] = useState('preview');   // mobile: 'preview' | 'edit' (preview is the default)
   const portraitInputRef = useRef(null);
   const isWide = useIsWide(900);
 
@@ -188,20 +189,32 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
       <div style={s.topbar}>
         <button type="button" style={s.cancel} onClick={onClose}>← Back</button>
         <div style={s.titleWrap}>
-          <span style={s.title}>Customise your storefront</span>
+          {isWide && <span style={s.title}>Customise your storefront</span>}
           <span style={{ ...s.statusPill, ...(published ? s.pillLive : s.pillDraft) }}>{published ? '● Live' : 'Draft'}</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          {published && <button type="button" style={s.unpublish} onClick={unpublish}>Unpublish</button>}
+          {isWide && published && <button type="button" style={s.unpublish} onClick={unpublish}>Unpublish</button>}
           <button type="button" style={{ ...s.publish, background: primary, opacity: (publishing || busy) ? 0.6 : 1 }} disabled={publishing || busy} onClick={publish}>
             {publishing ? 'Publishing…' : busy ? 'Uploading…' : published ? 'Update' : 'Publish'}
           </button>
         </div>
       </div>
 
+      {!isWide && (
+        <div style={s.tabs}>
+          {['preview', 'edit'].map(tab => (
+            <button key={tab} type="button" onClick={() => setMobileTab(tab)}
+              style={{ ...s.tab, ...(mobileTab === tab ? s.tabActive : {}) }}>
+              {tab === 'preview' ? 'Preview' : 'Edit'}
+            </button>
+          ))}
+        </div>
+      )}
+
       <div style={{ ...s.body, flexDirection: isWide ? 'row' : 'column' }}>
-        {/* controls */}
-        <div style={{ ...s.controls, width: isWide ? 300 : 'auto', borderRight: isWide ? '1px solid #E3E8E4' : 'none', borderBottom: isWide ? 'none' : '1px solid #E3E8E4' }}>
+        {/* controls — full screen on mobile (Edit tab), fixed sidebar on desktop */}
+        {(isWide || mobileTab === 'edit') && (
+        <div style={{ ...s.controls, width: isWide ? 300 : 'auto', flex: isWide ? 'none' : 1, borderRight: isWide ? '1px solid #E3E8E4' : 'none' }}>
           <div style={s.ctrlLabel}>Theme</div>
           <div style={s.themeList}>
             {themes.map(t => {
@@ -282,18 +295,22 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
           </div>
           <button type="button" style={s.addPhotos} onClick={addTestimonial}>+ Add review</button>
 
-          <p style={s.hint}>Changes preview live. Hit <b>Publish</b> to make them go live on your storefront.</p>
+          <p style={s.hint}>Edits show in <b>Preview</b>. Hit <b>{published ? 'Update' : 'Publish'}</b> to make them go live on your storefront.</p>
+          {!isWide && published && <button type="button" style={s.unpublishLink} onClick={unpublish}>Unpublish storefront</button>}
         </div>
+        )}
 
-        {/* live preview in a phone frame */}
-        <div style={s.stage}>
-          <div style={s.phone}>
+        {/* live preview — phone frame on desktop, full-bleed on mobile (Preview tab) */}
+        {(isWide || mobileTab === 'preview') && (
+        <div style={{ ...s.stage, padding: isWide ? 20 : 0 }}>
+          <div style={isWide ? s.phone : s.phoneMobile}>
             <div style={s.phoneScroll}>
               <CustomerStorefront baker={previewBaker} logoUrl={logoUrl} gallery={galleryForPreview} apiBaseUrl="" onStartDesign={() => {}} onEditPortrait={() => portraitInputRef.current?.click()} />
             </div>
           </div>
           {dirty && <div style={s.dirtyTag}>Unpublished changes</div>}
         </div>
+        )}
       </div>
     </div>
   );
@@ -328,15 +345,19 @@ function useIsWide(bp = 900) {
 const FONT = "'Quicksand', sans-serif";
 const s = {
   overlay:  { position: 'fixed', inset: 0, zIndex: 400, background: '#EEF2EF', fontFamily: FONT, display: 'flex', flexDirection: 'column' },
-  topbar:   { flexShrink: 0, height: 60, background: '#fff', borderBottom: '1px solid #E3E8E4', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 18px', gap: 12 },
-  cancel:   { background: '#F0F4F1', border: '1px solid #D9DED9', borderRadius: 10, padding: '8px 14px', cursor: 'pointer', fontFamily: FONT, fontSize: 13, fontWeight: 700, color: '#2C4433' },
-  titleWrap:{ display: 'flex', alignItems: 'center', gap: 10 },
-  title:    { fontSize: 15, fontWeight: 800, color: '#2C4433' },
+  topbar:   { flexShrink: 0, minHeight: 60, background: '#fff', borderBottom: '1px solid #E3E8E4', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 14px', gap: 10 },
+  cancel:   { flexShrink: 0, background: '#F0F4F1', border: '1px solid #D9DED9', borderRadius: 10, padding: '8px 14px', cursor: 'pointer', fontFamily: FONT, fontSize: 13, fontWeight: 700, color: '#2C4433', whiteSpace: 'nowrap' },
+  titleWrap:{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 },
+  title:    { fontSize: 15, fontWeight: 800, color: '#2C4433', whiteSpace: 'nowrap' },
+  tabs:     { flexShrink: 0, display: 'flex', gap: 6, padding: 8, background: '#fff', borderBottom: '1px solid #E3E8E4' },
+  tab:      { flex: 1, padding: '9px', borderRadius: 9, border: 'none', background: '#F0F4F1', color: '#6B8C74', fontFamily: FONT, fontSize: 13.5, fontWeight: 800, cursor: 'pointer' },
+  tabActive:{ background: '#2C4433', color: '#fff' },
   statusPill:{ fontSize: 10.5, fontWeight: 800, padding: '3px 9px', borderRadius: 20, textTransform: 'uppercase', letterSpacing: 0.5 },
   pillLive: { color: '#1B7A4B', background: '#E4F4EA' },
   pillDraft:{ color: '#9A6B16', background: '#FBF0DA' },
   unpublish:{ border: '1px solid #E3D3D3', background: '#fff', borderRadius: 10, padding: '9px 14px', cursor: 'pointer', fontFamily: FONT, fontSize: 13, fontWeight: 700, color: '#9A4040' },
-  publish:  { border: 'none', borderRadius: 10, padding: '10px 22px', cursor: 'pointer', fontFamily: FONT, fontSize: 14, fontWeight: 800, color: '#fff', boxShadow: '0 4px 14px rgba(0,0,0,0.18)' },
+  publish:  { flexShrink: 0, border: 'none', borderRadius: 10, padding: '10px 20px', cursor: 'pointer', fontFamily: FONT, fontSize: 14, fontWeight: 800, color: '#fff', boxShadow: '0 4px 14px rgba(0,0,0,0.18)', whiteSpace: 'nowrap' },
+  unpublishLink: { display: 'block', width: '100%', marginTop: 14, padding: '11px', borderRadius: 10, border: '1px solid #E3D3D3', background: '#fff', color: '#9A4040', fontFamily: FONT, fontSize: 13.5, fontWeight: 700, cursor: 'pointer' },
   body:     { flex: 1, display: 'flex', minHeight: 0 },
   controls: { flexShrink: 0, background: '#fff', padding: '20px 20px 24px', overflowY: 'auto', boxSizing: 'border-box' },
   ctrlLabel:{ fontSize: 11, fontWeight: 800, letterSpacing: 1, textTransform: 'uppercase', color: '#9BB5A2', marginBottom: 10 },
@@ -362,6 +383,7 @@ const s = {
   hint:     { fontSize: 12, fontWeight: 500, color: '#6B8C74', lineHeight: 1.55, marginTop: 22 },
   stage:    { flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, position: 'relative', overflow: 'hidden' },
   phone:    { width: 392, maxWidth: '100%', height: 'min(86vh, 780px)', background: '#fff', borderRadius: 30, overflow: 'hidden', boxShadow: '0 24px 70px rgba(40,30,35,0.28)', border: '8px solid #1c1518' },
+  phoneMobile: { width: '100%', height: '100%', background: '#fff', overflow: 'hidden' },
   phoneScroll: { width: '100%', height: '100%', overflowY: 'auto', overflowX: 'hidden', WebkitOverflowScrolling: 'touch' },
   dirtyTag: { position: 'absolute', top: 18, right: 18, background: '#2C4433', color: '#fff', fontSize: 11, fontWeight: 700, padding: '5px 12px', borderRadius: 20 },
 };
