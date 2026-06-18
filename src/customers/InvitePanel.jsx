@@ -10,7 +10,7 @@ import CustomerSearch from './CustomerSearch.jsx';
 export default function InvitePanel({ open, onClose, apiClient, primaryColor = '#1a1a1a' }) {
   const empty = { firstName: '', lastName: '', email: '', phone: '', note: '' };
   const [form, setForm]     = useState(empty);
-  const [mode, setMode]     = useState('new');   // 'new' | 'existing'
+  const [mode, setMode]     = useState('search'); // 'search' (existing) | 'new'
   const [selected, setSelected] = useState(null); // existing customer picked from search
   const [saving, setSaving] = useState(false);
   const [error, setError]   = useState(null);
@@ -88,15 +88,41 @@ export default function InvitePanel({ open, onClose, apiClient, primaryColor = '
           <div style={{ maxWidth: 460, margin: '0 auto' }}>
             {!result ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                {/* New vs existing customer */}
-                <div style={st.segment}>
-                  <button type="button" onClick={() => { setMode('new'); setError(null); }} style={{ ...st.segBtn, ...(mode === 'new' ? st.segBtnOn : {}) }}>New customer</button>
-                  <button type="button" onClick={() => { setMode('existing'); setError(null); }} style={{ ...st.segBtn, ...(mode === 'existing' ? st.segBtnOn : {}) }}>Existing customer</button>
-                </div>
+                <p style={st.lead}>Invite a customer to design their own cake. They'll get a link and log in with a one-time code — no account needed.</p>
 
-                {mode === 'new' ? (
+                {mode === 'search' ? (
+                  !selected ? (
+                    <>
+                      <Field label="Find a customer">
+                        <CustomerSearch apiClient={apiClient} primaryColor={primaryColor} isMobile={isMobile} autoFocus onSelect={c => { setSelected(c); setError(null); }} />
+                      </Field>
+                      <div style={st.orRow}><span style={st.orLine} /><span style={st.orText}>or</span><span style={st.orLine} /></div>
+                      <button type="button" onClick={() => { setMode('new'); setSelected(null); setError(null); }} style={st.secondaryWide}>+ Invite a new customer</button>
+                      {error && <div style={st.err}>{error}</div>}
+                    </>
+                  ) : (
+                    <>
+                      <div style={st.selectedCard}>
+                        <div style={{ width: 36, height: 36, borderRadius: '50%', background: primaryColor, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 14, flexShrink: 0 }}>
+                          {(selected.first_name?.[0] ?? '').toUpperCase()}
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontWeight: 700, fontSize: 14, color: '#1a1a1a' }}>{selected.first_name} {selected.last_name ?? ''}</div>
+                          {selected.phone && <div style={{ fontSize: 12, color: '#666', marginTop: 1 }}>{selected.phone}</div>}
+                          {selected.email && <div style={{ fontSize: 11, color: '#999', marginTop: 1 }}>{selected.email}</div>}
+                        </div>
+                        <button type="button" onClick={() => { setSelected(null); setError(null); }} style={st.changeBtn}>Change</button>
+                      </div>
+                      <Field label="Note (optional)"><input style={st.inp} value={form.note} onChange={set('note')} placeholder="e.g. Riya's birthday cake" /></Field>
+                      {error && <div style={st.err}>{error}</div>}
+                      <button type="button" onClick={inviteExisting} disabled={saving} style={{ ...st.primary, background: saving ? '#9BB5A2' : primaryColor }}>
+                        {saving ? 'Sending…' : 'Invite to a design session'}
+                      </button>
+                    </>
+                  )
+                ) : (
                   <form onSubmit={submitNew} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                    <p style={st.lead}>Send a customer a link to design their cake. They'll log in with a one-time code.</p>
+                    <button type="button" onClick={() => { setMode('search'); setError(null); }} style={st.backBtn}>← Back to search</button>
                     <div style={{ display: 'flex', gap: 12 }}>
                       <Field label="First name *"><input style={st.inp} value={form.firstName} onChange={set('firstName')} autoFocus /></Field>
                       <Field label="Last name"><input style={st.inp} value={form.lastName} onChange={set('lastName')} /></Field>
@@ -107,37 +133,9 @@ export default function InvitePanel({ open, onClose, apiClient, primaryColor = '
                     <p style={st.hint}>Provide at least an email or a phone — the code is sent there.</p>
                     {error && <div style={st.err}>{error}</div>}
                     <button type="submit" disabled={saving} style={{ ...st.primary, background: saving ? '#9BB5A2' : primaryColor }}>
-                      {saving ? 'Sending…' : 'Send invite'}
+                      {saving ? 'Sending…' : 'Invite to a design session'}
                     </button>
                   </form>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                    <p style={st.lead}>Search your customers and send them a design link. They'll log in with a one-time code.</p>
-                    {!selected ? (
-                      <Field label="Find a customer">
-                        <CustomerSearch apiClient={apiClient} primaryColor={primaryColor} isMobile={isMobile} autoFocus onSelect={c => { setSelected(c); setError(null); }} />
-                      </Field>
-                    ) : (
-                      <>
-                        <div style={st.selectedCard}>
-                          <div style={{ width: 36, height: 36, borderRadius: '50%', background: primaryColor, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 14, flexShrink: 0 }}>
-                            {(selected.first_name?.[0] ?? '').toUpperCase()}
-                          </div>
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ fontWeight: 700, fontSize: 14, color: '#1a1a1a' }}>{selected.first_name} {selected.last_name ?? ''}</div>
-                            {selected.phone && <div style={{ fontSize: 12, color: '#666', marginTop: 1 }}>{selected.phone}</div>}
-                            {selected.email && <div style={{ fontSize: 11, color: '#999', marginTop: 1 }}>{selected.email}</div>}
-                          </div>
-                          <button type="button" onClick={() => { setSelected(null); setError(null); }} style={st.changeBtn}>Change</button>
-                        </div>
-                        <Field label="Note (optional)"><input style={st.inp} value={form.note} onChange={set('note')} placeholder="e.g. Riya's birthday cake" /></Field>
-                        {error && <div style={st.err}>{error}</div>}
-                        <button type="button" onClick={inviteExisting} disabled={saving} style={{ ...st.primary, background: saving ? '#9BB5A2' : primaryColor }}>
-                          {saving ? 'Sending…' : 'Send invite'}
-                        </button>
-                      </>
-                    )}
-                  </div>
                 )}
               </div>
             ) : (
@@ -185,9 +183,11 @@ const st = {
   linkBtn:  { padding: '8px', background: 'none', border: 'none', color: '#9BB5A2', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' },
   successBadge: { alignSelf: 'flex-start', background: '#E8F5E9', color: '#2E7D32', fontWeight: 800, fontSize: 13, padding: '6px 14px', borderRadius: 20 },
   deliveryRow: { fontSize: 13, fontWeight: 600, color: '#555' },
-  segment:  { display: 'flex', gap: 4, background: '#EFEBE3', borderRadius: 11, padding: 4 },
-  segBtn:   { flex: 1, padding: '8px 10px', borderRadius: 8, border: 'none', background: 'transparent', color: '#8a8577', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' },
-  segBtnOn: { background: '#fff', color: '#1a1a1a', boxShadow: '0 1px 3px rgba(0,0,0,0.12)' },
+  secondaryWide: { padding: '11px', borderRadius: 11, border: '1.5px dashed #CFC9BD', background: '#fff', color: '#6B6657', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', width: '100%' },
+  backBtn:  { alignSelf: 'flex-start', padding: '6px 10px', borderRadius: 9, border: '1.5px solid #E0DDD8', background: '#fff', color: '#666', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' },
+  orRow:    { display: 'flex', alignItems: 'center', gap: 10 },
+  orLine:   { flex: 1, height: 1, background: '#E0DDD8' },
+  orText:   { fontSize: 11, fontWeight: 700, color: '#bbb', textTransform: 'uppercase', letterSpacing: 0.6 },
   selectedCard: { display: 'flex', alignItems: 'center', gap: 10, padding: 12, background: '#fff', border: '1.5px solid #E0DDD8', borderRadius: 12 },
   changeBtn: { padding: '6px 12px', borderRadius: 9, border: '1.5px solid #E0DDD8', background: '#fff', color: '#666', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 },
 };
