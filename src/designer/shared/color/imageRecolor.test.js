@@ -39,6 +39,14 @@ describe('recolorImageData — blue_gt_green region (wing fill only)', () => {
     expect(rgbToHsl(d[0], d[1], d[2])[2]).toBeLessThan(rgbToHsl(d[4], d[5], d[6])[2]);
   });
 
+  it('opaque method recolours every non-transparent pixel (gold included), skips transparent', () => {
+    const d = new Uint8ClampedArray([212, 175, 55, 255,  0, 0, 0, 0]);  // gold (opaque) + transparent
+    recolorImageData(d, 2, 1, '#2244cc', { method: 'opaque' });
+    expect(hueOf(d, 0)).toBeGreaterThan(180);              // gold recoloured toward blue
+    expect(hueOf(d, 0)).toBeLessThan(260);
+    expect([d[4], d[5], d[6], d[7]]).toEqual([0, 0, 0, 0]); // transparent pixel untouched
+  });
+
   it('is a no-op when no region descriptor is given', () => {
     const px = [200, 180, 230];
     const d = buf(px);

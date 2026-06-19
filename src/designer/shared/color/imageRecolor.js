@@ -49,9 +49,12 @@ export function hslToRgb(h, s, l) {
 // `i` is the pixel index × 4 (RGBA stride). Method-driven, never type-driven.
 function matcher(region) {
   if (!region) return () => false;                         // no descriptor → recolour nothing
-  const method = region.method ?? 'blue_gt_green';
+  const method = region.method ?? 'opaque';
+  if (method === 'opaque') {
+    return (d, i) => d[i + 3] >= 8;                         // every non-transparent pixel (whole image)
+  }
   if (method === 'blue_gt_green') {
-    const guard = region?.guard ?? 12;                       // blue must exceed green by this margin
+    const guard = region.guard ?? 12;                        // blue must exceed green by this margin
     return (d, i) => d[i + 3] >= 8 && (d[i + 2] - d[i + 1]) >= guard;
   }
   return () => false;                                        // unknown method → recolour nothing
