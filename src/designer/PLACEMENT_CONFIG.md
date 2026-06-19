@@ -234,17 +234,94 @@ The complete `cake_elements` row — `placement_config` is one field of it. Writ
     "tilt":      true
   },
 
-  "placement_config": {                                   // HOW it behaves — see §0 for EVERY possible key
-    "top_surface": "stand",
-    "side":        "stand",
-    "r":           1.0,
-    "foldable":    true,
-    "fold":        32,
-    "spine":       0.5,
-    "recolor":     { "method": "saturated", "sat": 0.25 }
+  "placement_config": {                                   // HOW it behaves — the FULL superset (= §0).
+                                                          // A real element uses only a subset; many
+                                                          // groups below are mutually exclusive.
+    // ── Zones × modes — one key per surface the element offers ──
+    "top_surface": "stand",                               // stand | hug | faux_ball_single | faux_balls | perch
+    "side":        "hug",
+    "middle_tier": "hug",
+    "board":       "hug",
+    "rim":         "hug",
+
+    // ── Sizing & placement style ──
+    "r":               1.0,
+    "scale":           { "min": 0.5, "max": 1.5, "step": 0.05 },
+    "single_per_slot": true,
+    "scatter":         false,
+    "hug_fill":        0.7,
+    "side_proud":      false,
+
+    // ── GLB facing offset (read via facingOffsetRadians) ──
+    "rotation":      [0, -90, 0],                          // DEGREES
+    "rotation_unit": "deg",
+
+    // ── GLB material / surface ──
+    "roughness":               0.6,
+    "metalness":               0.0,
+    "useSharedFondantTexture": false,
+
+    // ── Folded sticker (2D image) ──
+    "foldable": true,
+    "fold":     30,
+    "spine":    0.5,
+
+    // ── Pixel recolour (2D image; needs allowed_actions.color) ──
+    "recolor": { "method": "saturated", "sat": 0.25 },    // OR { "method": "blue_gt_green", "guard": 12 } OR { "method": "opaque" }
+
+    // ── Perch (figure seated on the top edge) ──
+    "perch": { "tilt_deg": 0, "y_offset": 0, "edge_inset": 0 },
+
+    // ── GLB Recompose — customer-recolourable part groups ──
+    "_model": {
+      "groups":   [ { "key": "wings", "label": "Wings", "default": "#cc88ff", "editable": true } ],
+      "segments": []
+    },
+
+    // ── Pattern fields (decor_pattern / piping_pattern) ──
+    "pattern_only":    false,
+    "parts_deletable": false,
+    "parts": [ { "element_id": "uuid", "dx": 0.1, "dz": 0.0, "mirror": false } ],
+
+    // ── Piping (cream_piping / piping_pattern) — every top_* has a bottom_* twin ──
+    "top_arrangement":          "ring",                   // ring | single
+    "top_arrangements_allowed": ["ring", "single"],
+    "top_single_angle":         0,                        // RADIANS
+    "top_single_max":           12,
+    "top_flip":                 false,
+    "top_rotation":             [0, 0, 0],                // DEGREES
+    "top_radial_offset":        0,
+    "top_y_offset":             0,
+    "top_spacing":              0,
+    "top_softness":             0.7,
+    "top_alt_enabled":          false,
+    "top_alt_glb_url":          null,
+    "top_alt_flip":             false,
+    "top_alt_rotation":         [0, 0, 0],
+    "top_alt_radial_offset":    0,
+    "top_alt_y_offset":         0,
+    "top_pattern":              "AB",
+    "top_bend":                 false,
+    "top_bend_ring":            false,
+    "top_festoons":             8,
+    "top_bend_depth":           0,
+    "top_bend_tilt":            0,
+    "top_swag_count":           8,
+    "top_swag_depth":           0,
+    "top_swag_tilt":            0,
+    "top_wrap":                 false,
+    "top_wrap_tilt":            0,
+    "top_wrap_size":            1.0,
+    // …bottom_* mirrors every top_* above (own defaults), plus two bottom-only flags:
+    "bottom_y_adjustable":      false,
+    "bottom_flip_adjustable":   false
   }
 }
 ```
+
+> §5's `placement_config` is the same superset as §0 (here shown nested inside the full element row).
+> Keep the two in sync — or treat §5 as the single complete sample and §0 as the quick placement-only
+> view of it.
 
 ---
 
@@ -252,7 +329,7 @@ _Generated from the code (`pipingPlacementFromConfig`, `placement.js`, `addStick
 `loadElementsIfNeeded`, `filterEl`, `createGlobalElement` / `updateGlobalElement`)._
 
 > **Keep this living.** Whenever you add, rename, or remove a `placement_config` key (or a `recolor`
-> method / placement mode), update BOTH the superset sample (§0) **and** the relevant table in the
-> same change — the sample is meant to stay a true superset of everything the code reads. When an
+> method / placement mode), update the superset in BOTH §0 **and** §5's nested `placement_config`
+> (they're the same superset), **and** the relevant table — all in the same change. When an
 > element-level field changes (a new `cake_elements` column or `allowed_actions` capability), update
 > the full element structure (§5) too.
