@@ -366,6 +366,17 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
           // deep model stands off the wall (toppers). Config-driven; applied in the side bend path.
           sideProud:     element.placement_config?.side_proud === true,
           hugFill:       element.placement_config?.hug_fill ?? null,
+          // Folded sticker: a flat decal that splits at the body spine into two hinged wings
+          // (e.g. a card butterfly). Capability is config-gated like parts_deletable — the
+          // renderer only splits/folds when `foldable` is true; fold (deg) / spine (0–1) tune
+          // it, falling back to DEFAULT_FOLD_DEG / DEFAULT_SPINE at render. Absent → flat plane.
+          foldable:      element.placement_config?.foldable === true,
+          fold:          element.placement_config?.fold ?? null,
+          spine:         element.placement_config?.spine ?? null,
+          // Pixel-recolour region descriptor for a 2D image sticker (e.g. recolour only a card
+          // butterfly's wings). Present → the renderer recolours those pixels to `color` (driven by
+          // the same ColorWheel/allowed_actions.color as GLB tint). Absent → image renders as-is.
+          recolor:       element.placement_config?.recolor ?? null,
           u:             position.u ?? null,   // rect side: perimeter fraction (round uses theta)
           theta:         (placementMode === PLACEMENT_MODES.FAUX_BALL_SINGLE && (zone === ZONES.SIDE || zone === ZONES.MIDDLE_TIER)) ? px : seatTheta,
           y:             (placementMode === PLACEMENT_MODES.FAUX_BALL_SINGLE && (zone === ZONES.SIDE || zone === ZONES.MIDDLE_TIER)) ? pz : seatY,

@@ -6,6 +6,13 @@ import { ZONES, PLACEMENT_MODES } from './constants.js';
 // element via placement_config.hug_fill.
 export const DEFAULT_HUG_FILL = 0.7;
 
+// Folded sticker (placement_config.foldable): the flat decal splits at the body spine into
+// two wings that hinge up into a shallow V. These are the fallbacks used when `foldable` is
+// on but the angle/split aren't authored — tunable per element via placement_config.fold
+// (dihedral degrees) and placement_config.spine (split fraction, 0–1). foldable off → flat.
+export const DEFAULT_FOLD_DEG = 30;
+export const DEFAULT_SPINE    = 0.5;
+
 // Render-time size for a side-hug hero decoration: it fills `fill` of the tier WALL HEIGHT,
 // independent of placement_config.r (which stays the absolute size for `stand`). Pure so the
 // contract test pins the formula; `stickerSize` is the renderer's normalized base (a model is

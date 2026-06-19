@@ -17,7 +17,8 @@ import {
 import { pointerRay, cylinderHit, planeHit, buildRay } from '../utils/raycasting.js';
 import { getFondantNormalMap, applyBoxUVs } from '../shared/textures/fondantTexture.js';
 import { tierShape, topClamp, topContains, boxHit, nearestU, rectSidePlacement, perimeter, boundingRadius } from '../geometry/surface.js';
-import { hugScale, isDynamicHug, wallClampY, DEFAULT_HUG_FILL } from '../placement.js';
+import { hugScale, isDynamicHug, wallClampY, DEFAULT_HUG_FILL, DEFAULT_FOLD_DEG, DEFAULT_SPINE } from '../placement.js';
+import { recolorImageData } from '../shared/color/imageRecolor.js';
 import { applyGradient } from '../shared/color/gradientMaterial.js';
 
 function darkenHex(hex, amount) {
@@ -240,17 +241,84 @@ function createCurvedPlane(width, height, curveRadius, radialSegments = 16) {
   return geo;
 }
 
-function StickerTexture({ imageUrl, selected, curved, curveRadius }) {
-  const texture = useTexture(imageUrl);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  // Always build geometry in memo; for flat stickers use a standard PlaneGeometry.
-  // curveRadius is capped at 0.3 world units so the bend is actually visible —
+// Builds a "folded sticker": the flat square is split at the body spine into two wings
+// that hinge up into a shallow V (dihedral = foldRad). ONE geometry, the image's left half
+// [0,spine] mapped to the left wing and right half [spine,1] to the right — so a single asset
+// reads as a folded butterfly. Wings rise toward +Z, which the renderer turns into up (lay),
+// out (side), or toward-camera (stand). foldRad 0 → a flat plane. spine 0.5 → centred hinge.
+function createFoldedPlane(size, foldRad, spine) {
+  const S = size, hy = S / 2;
+  const xh = S * (spine - 0.5);                          // hinge x (the body spine); 0 at spine 0.5
+  const cos = Math.cos(foldRad), sin = Math.sin(foldRad);
+  const fold = (x, y) => [xh + (x - xh) * cos, y, Math.abs(x - xh) * sin];   // both wings tent to +Z
+  const positions = [], uvs = [], indices = [];
+  let base = 0;
+  // Each wing is its own quad (no shared spine vertices) so the crease stays sharp.
+  const quad = (x0, x1) => {
+    for (const [x, y] of [[x0, -hy], [x1, -hy], [x1, hy], [x0, hy]]) {
+      positions.push(...fold(x, y));
+      uvs.push((x + hy) / S, (y + hy) / S);              // u from x → auto-splits at spine; v from y
+    }
+    indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
+    base += 4;
+  };
+  quad(-hy, xh);   // left wing  → u [0, spine]
+  quad(xh, hy);    // right wing → u [spine, 1]
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geo.setAttribute('uv',       new THREE.Float32BufferAttribute(uvs, 2));
+  geo.setIndex(indices);
+  geo.computeVertexNormals();
+  return geo;
+}
+
+// Returns the sticker's texture, pixel-recoloured to `color` when the element carries a
+// `recolor` region descriptor (placement_config.recolor). useTexture still owns loading/suspense/
+// caching; we derive a recoloured CanvasTexture from the loaded image only when asked. A tainted
+// canvas (CORS) falls back to the original — recolour silently off, sticker still renders.
+function useStickerImageTexture(imageUrl, recolor, color) {
+  const base = useTexture(imageUrl);
+  base.colorSpace = THREE.SRGBColorSpace;
+  const recoloured = useMemo(() => {
+    if (!recolor || !color) return base;
+    const img = base.image;
+    const w = img?.naturalWidth || img?.width, h = img?.naturalHeight || img?.height;
+    if (!w || !h) return base;
+    try {
+      const c = document.createElement('canvas');
+      c.width = w; c.height = h;
+      const ctx = c.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(img, 0, 0, w, h);
+      const id = ctx.getImageData(0, 0, w, h);
+      recolorImageData(id.data, w, h, color, recolor);
+      ctx.putImageData(id, 0, 0);
+      const tex = new THREE.CanvasTexture(c);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.anisotropy = base.anisotropy;
+      tex.flipY = base.flipY;
+      return tex;
+    } catch (_) {
+      return base;   // tainted canvas → original texture (no recolour)
+    }
+  }, [base, recolor, color]);
+  // Free the derived GPU texture when colour changes / unmounts (the cached `base` is left alone).
+  useEffect(() => () => { if (recoloured !== base) recoloured.dispose(); }, [recoloured, base]);
+  return recoloured;
+}
+
+function StickerTexture({ imageUrl, selected, curved, curveRadius, foldable, fold, spine, recolor, color }) {
+  const texture = useStickerImageTexture(imageUrl, recolor, color);
+  // Geometry is config-driven: a foldable element hinges into a folded plane (the fold wins
+  // over wall-curving — a stuck-on card doesn't also curve); otherwise the prior flat/curved
+  // behaviour. curveRadius is capped at 0.3 world units so the bend is actually visible —
   // using the physical tier radius (~1.2) would produce only a 0.008-unit depth.
   const geo = useMemo(
-    () => (curved && curveRadius)
-      ? createCurvedPlane(STICKER_SIZE, STICKER_SIZE, Math.min(curveRadius, 0.3))
-      : new THREE.PlaneGeometry(STICKER_SIZE, STICKER_SIZE),
-    [curved, curveRadius],
+    () => foldable
+      ? createFoldedPlane(STICKER_SIZE, (fold ?? DEFAULT_FOLD_DEG) * Math.PI / 180, spine ?? DEFAULT_SPINE)
+      : (curved && curveRadius)
+        ? createCurvedPlane(STICKER_SIZE, STICKER_SIZE, Math.min(curveRadius, 0.3))
+        : new THREE.PlaneGeometry(STICKER_SIZE, STICKER_SIZE),
+    [foldable, fold, spine, curved, curveRadius],
   );
   return (
     <mesh geometry={geo}>
@@ -521,7 +589,7 @@ function StickerModel({ imageUrl, selected, color, groupColors, gradient, clipY,
   );
 }
 
-function StickerFace({ imageUrl, selected, color, groupColors, gradient, clipY, curved, curveRadius, bendRadius, baseRotation, seatProud = false, fondant = false, flipX = false, onSeat }) {
+function StickerFace({ imageUrl, selected, color, groupColors, gradient, clipY, curved, curveRadius, bendRadius, baseRotation, seatProud = false, fondant = false, flipX = false, foldable = false, fold, spine, recolor, onSeat }) {
   if (!imageUrl) return null;
   const isGlb = /\.(glb|gltf)(\?|$)/i.test(imageUrl);
   const inner = (
@@ -533,7 +601,7 @@ function StickerFace({ imageUrl, selected, color, groupColors, gradient, clipY, 
       <Suspense fallback={<LoadingPing />}>
         {isGlb
           ? <StickerModel imageUrl={imageUrl} selected={selected} color={color} groupColors={groupColors} gradient={gradient} clipY={clipY} bendRadius={bendRadius} baseRotation={baseRotation} seatProud={seatProud} fondant={fondant} onSeat={onSeat} />
-          : <StickerTexture imageUrl={imageUrl} selected={selected} curved={curved} curveRadius={curveRadius} />
+          : <StickerTexture imageUrl={imageUrl} selected={selected} curved={curved} curveRadius={curveRadius} foldable={foldable} fold={fold} spine={spine} recolor={recolor} color={color} />
         }
       </Suspense>
     </TextureErrorBoundary>
@@ -597,7 +665,7 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
     >
       {/* X-axis tilt: leans the pick up (+) or down (−) along the cake side */}
       <group rotation={[sticker.tiltAngle ?? 0, 0, 0]}>
-      <StickerFace imageUrl={sticker.imageUrl} selected={selected} color={sticker.color} groupColors={sticker.groupColors} gradient={sticker.gradient} curved={!isGlb && !isRect} curveRadius={curveRadius} bendRadius={bendRadius} baseRotation={sticker.baseRotation} seatProud={sticker.sideProud === true} fondant={sticker.useSharedFondantTexture} flipX={sticker.flipX} />
+      <StickerFace imageUrl={sticker.imageUrl} selected={selected} color={sticker.color} groupColors={sticker.groupColors} gradient={sticker.gradient} curved={!isGlb && !isRect} curveRadius={curveRadius} bendRadius={bendRadius} baseRotation={sticker.baseRotation} seatProud={sticker.sideProud === true} fondant={sticker.useSharedFondantTexture} flipX={sticker.flipX} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} recolor={sticker.recolor} />
       {/* selection rectangle removed — emissive tint + toolbar are the selection cue */}
       {selected && toolbar && (
         <Html position={[0, STICKER_SIZE / 2 + 0.18, 0.02]} center zIndexRange={[200, 0]}>
@@ -1161,7 +1229,7 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
   // Shared children: face + toolbar Html + invisible hit mesh
   const innerContent = (e_onDown) => (
     <>
-      <StickerFace imageUrl={sticker.imageUrl} selected={selected} color={sticker.color} groupColors={sticker.groupColors} gradient={sticker.gradient} clipY={(isStand || isPerch) ? undefined : py} baseRotation={sticker.baseRotation} fondant={sticker.useSharedFondantTexture} flipX={sticker.flipX} onSeat={setSeatHalf} />
+      <StickerFace imageUrl={sticker.imageUrl} selected={selected} color={sticker.color} groupColors={sticker.groupColors} gradient={sticker.gradient} clipY={(isStand || isPerch) ? undefined : py} baseRotation={sticker.baseRotation} fondant={sticker.useSharedFondantTexture} flipX={sticker.flipX} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} recolor={sticker.recolor} onSeat={setSeatHalf} />
       {/* selection rectangle removed — emissive tint + toolbar are the selection cue */}
       {selected && toolbar && (
         <Html position={[0, STICKER_SIZE / 2 + 0.18, 0.02]} center zIndexRange={[200, 0]}>
@@ -1790,7 +1858,7 @@ function CakeThumbnailScene({ config }) {
           return (
             <group key={sticker.id} position={[px, sticker.y, pz]} rotation={[0, yaw, 0]} scale={sticker.scale}>
               <group rotation={[sticker.tiltAngle ?? 0, 0, 0]}>
-                <StickerFace imageUrl={sticker.imageUrl} selected={false} curved={!thumbIsGlb && tshp.kind !== 'rect'} curveRadius={r} baseRotation={sticker.baseRotation} fondant={sticker.useSharedFondantTexture} />
+                <StickerFace imageUrl={sticker.imageUrl} selected={false} color={sticker.color} curved={!thumbIsGlb && tshp.kind !== 'rect'} curveRadius={r} baseRotation={sticker.baseRotation} fondant={sticker.useSharedFondantTexture} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} recolor={sticker.recolor} />
               </group>
             </group>
           );
@@ -1817,7 +1885,7 @@ function CakeThumbnailScene({ config }) {
             <group key={sticker.id} position={[sticker.x, py, sticker.z]} scale={sticker.scale}>
               <group rotation={[0, sticker.rotation ?? 0, 0]}>
                 <group rotation={[-(sticker.tiltAngle ?? 0), 0, 0]}>
-                  <StickerFace imageUrl={sticker.imageUrl} selected={false} groupColors={sticker.groupColors} clipY={undefined} baseRotation={sticker.baseRotation} fondant={sticker.useSharedFondantTexture} />
+                  <StickerFace imageUrl={sticker.imageUrl} selected={false} color={sticker.color} groupColors={sticker.groupColors} clipY={undefined} baseRotation={sticker.baseRotation} fondant={sticker.useSharedFondantTexture} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} recolor={sticker.recolor} />
                 </group>
               </group>
             </group>
@@ -1825,7 +1893,7 @@ function CakeThumbnailScene({ config }) {
         }
         return (
           <group key={sticker.id} position={[sticker.x, py, sticker.z]} rotation={[-Math.PI / 2, 0, sticker.rotation ?? 0]} scale={sticker.scale}>
-            <StickerFace imageUrl={sticker.imageUrl} selected={false} clipY={py} baseRotation={sticker.baseRotation} />
+            <StickerFace imageUrl={sticker.imageUrl} selected={false} color={sticker.color} clipY={py} baseRotation={sticker.baseRotation} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} recolor={sticker.recolor} />
           </group>
         );
       })}
