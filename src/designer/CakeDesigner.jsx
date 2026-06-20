@@ -9,7 +9,7 @@ import TopperPreview from './canvas/TopperPreview.jsx';
 import { CakeSpinner, CakeSpinnerFill, DecorLoadingOverlay } from './canvas/CakeSpinner.jsx';
 import { isSinglePerSlot, placementSlots, isDynamicHug, facingOffsetRadians, scaleRangeOf, DEFAULT_FOLD_DEG, edgeSeatSeed } from './placement.js';
 import { tierShape } from './geometry/surface.js';
-import { packCluster, clusterRadii } from './geometry/spherePacking.js';
+import { packCluster, clusterRadii, pocketSeat2D } from './geometry/spherePacking.js';
 import { SHELL_HEIGHT_FRAC, getShellExtents, getFestoonExtents, festoonSig } from './canvas/pipingMetrics.js';
 import { useCakeDesign } from './hooks/useCakeDesign';
 import FrostingTypePicker from './controls/FrostingPicker.jsx';
@@ -2525,7 +2525,19 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       ? { ...hit, x: 0, z: 0 }
       : hit;
 
-    const newId = addSticker(element, effectiveHit.zone, effectiveHit.tierIndex, placementMode ?? 'hug', effectiveHit);
+    // Manual cluster: a cluster ball DROPPED near others on the top nestles into the pocket between its
+    // nearest cluster-ball neighbours (tangent, no overlap) — placed `exact` so de-overlap can't undo the
+    // seat. Same pure helper the in-canvas drag uses. Config-gated (placement_config.cluster).
+    let dropHit = effectiveHit, dropExtra;
+    if (element.placement_config?.cluster && effectiveHit.zone === ZONES.TOP_SURFACE) {
+      const selfR = CLUSTER_BASE_R * (element.placement_config?.r ?? 2.5);
+      const neighbors = design.stickers
+        .filter(s => s.clusterBall && s.zone === ZONES.TOP_SURFACE && s.tierIndex === effectiveHit.tierIndex)
+        .map(s => ({ x: s.x, z: s.z, r: CLUSTER_BASE_R * (s.scale ?? 1) }));
+      const snap = pocketSeat2D(effectiveHit.x ?? 0, effectiveHit.z ?? 0, selfR, neighbors);
+      if (snap) { dropHit = { ...effectiveHit, x: snap.x, z: snap.z }; dropExtra = { exact: true }; }
+    }
+    const newId = addSticker(element, dropHit.zone, dropHit.tierIndex, placementMode ?? 'hug', dropHit, dropExtra);
     setElementsOpen(false);
     // Make the just-added decoration the active card — collapsing any other open
     // card — so a second element added stacks below and only the newest is expanded
@@ -3505,7 +3517,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       const srcEl = sticker && elementById.get(sticker.elementId);
       if (sticker && !sticker.clusterId && srcEl?.placement_config?.cluster) {
         groups.push({ key: 'cluster-toggle', divider: true, controls: [
-          <button key="cl-on" style={{ ...s.tbIconBtn, width: '100%', fontWeight: 700 }} onClick={() => makeCluster(sticker)}>✨ Create automatic cluster</button>,
+          <button key="cl-on" style={{ ...s.toolbarBtn, width: '100%', background: '#1a1a1a', color: '#fff', padding: '8px 10px', fontSize: 12 }} onClick={() => makeCluster(sticker)}>Create cluster</button>,
         ] });
       }
     }
