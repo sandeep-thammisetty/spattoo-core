@@ -16,7 +16,7 @@ import {
 } from '../constants.js';
 import { pointerRay, cylinderHit, planeHit, buildRay } from '../utils/raycasting.js';
 import { getFondantNormalMap, applyBoxUVs } from '../shared/textures/fondantTexture.js';
-import { tierShape, topClamp, topClampInset, topContains, boxHit, nearestU, rectSidePlacement, perimeter, boundingRadius } from '../geometry/surface.js';
+import { tierShape, topClamp, topClampInset, topContains, boxHit, nearestU, rectSidePlacement, perimeter, boundingRadius, snapToRim } from '../geometry/surface.js';
 import { hugScale, isDynamicHug, wallClampY, DEFAULT_HUG_FILL, DEFAULT_FOLD_DEG, DEFAULT_SPINE } from '../placement.js';
 import { recolorImageData } from '../shared/color/imageRecolor.js';
 import { applyGradient } from '../shared/color/gradientMaterial.js';
@@ -1301,23 +1301,31 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
   // Perch: a figure seated on the top edge. Its centre sits AT the edge height (legs hang over the
   // side, upper body above) — no auto seat-lift, and no clip plane (clipping would slice the figure).
   const isPerch = sticker.placementMode === 'perch';
+  // Verge: rests its base on the rim lip and reclines radially OUTWARD, the rest cantilevered over
+  // the edge into the air (butterflies, flowers). Seats on its base like `stand` (no straddle); the
+  // outward lean + edge contact is what makes part of it overhang. World-oriented, never billboarded.
+  const isVerge = sticker.placementMode === 'verge';
   const isGlb2d = /\.(glb|gltf)(\?|$)/i.test(sticker.imageUrl ?? '');
   // Seat the model's actual BOTTOM on the surface: lift by its measured half-height (reported by
   // StickerModel once the GLB loads), not a fixed STICKER_SIZE/2. Default = rests on the surface;
   // float is opt-in via yOffset (the Height control) / config. Fallback to the constant pre-measure.
   const [seatHalf, setSeatHalf] = useState(null);
-  // A foldable card (e.g. butterfly) on the EDGE stands on its BODY base like `stand`, just seated at
-  // the rim — not the figure-straddle (centre on the edge) that perch uses for legged 3D toppers.
-  const standSeat = isStand || (isPerch && sticker.foldable === true);
+  // Verge seat anchor is config-driven (placement_config.verge.seat → instance.vergeSeat): 'center'
+  // (default) rests the MID-SPINE on the rim edge so the body drapes over the lip; 'base' seats the
+  // BODY base on the surface and leans from there. Other modes are unaffected.
+  const isVergeBase = isVerge && sticker.vergeSeat === 'base';
+  // Base-seated upright modes: stand, a base-seat verge, and a foldable card on a perch edge — all
+  // stand on their BODY base. A centre-seat verge / perch sit centred at the rim edge height instead.
+  const standSeat = isStand || isVergeBase || (isPerch && sticker.foldable === true);
   const py = topY + (sticker.yOffset ?? 0) + (
     standSeat ? (seatHalf ?? STICKER_SIZE / 2) * (sticker.scale ?? 1) + FLAT_STICKER_Y_OFFSET
-    : isPerch ? 0   // centre straddles the top edge — legs below, body above (legged toppers)
+    : (isPerch || isVerge) ? 0   // centre at the rim edge height — perch straddles, centre-seat verge's mid-spine on the lip
     : FLAT_STICKER_Y_OFFSET);
 
   // Shared children: face + toolbar Html + invisible hit mesh
   const innerContent = (e_onDown) => (
     <>
-      <StickerFace imageUrl={sticker.imageUrl} selected={selected} color={sticker.color} groupColors={sticker.groupColors} gradient={sticker.gradient} clipY={(isStand || isPerch) ? undefined : py} baseRotation={sticker.baseRotation} fondant={sticker.useSharedFondantTexture} flipX={sticker.flipX} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} standUp={(isStand || isPerch) && sticker.foldable === true} recolor={sticker.recolor} onSeat={setSeatHalf} />
+      <StickerFace imageUrl={sticker.imageUrl} selected={selected} color={sticker.color} groupColors={sticker.groupColors} gradient={sticker.gradient} clipY={(isStand || isPerch || isVerge) ? undefined : py} baseRotation={sticker.baseRotation} fondant={sticker.useSharedFondantTexture} flipX={sticker.flipX} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} standUp={(isStand || isPerch || isVerge) && sticker.foldable === true} recolor={sticker.recolor} onSeat={setSeatHalf} />
       {/* selection rectangle removed — emissive tint + toolbar are the selection cue */}
       {selected && toolbar && (
         <Html position={[0, STICKER_SIZE / 2 + 0.18, 0.02]} center zIndexRange={[200, 0]}>
@@ -1385,11 +1393,18 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
           const incrDz  = hit.z - prevHit.z;
           let newX = lastValidPos.current.x + incrDx;
           let newZ = lastValidPos.current.z + incrDz;
-          // Stand/perch sit on a point base → can reach the rim (margin 0); a flat decal keeps its
-          // footprint on the cake (margin = half its size, so its outer edge meets the rim). Derived
-          // from the placement mode + size already on the instance — never a config flag.
-          const edgeMargin = (isStand || isPerch) ? 0 : (STICKER_SIZE / 2) * (sticker.scale ?? 1);
-          ({ x: newX, z: newZ } = topClampInset(shp, newX, newZ, edgeMargin));
+          // Edge-seated modes live ON the rim → dragging moves them AROUND the rim perimeter
+          // (snapToRim), never inward onto the top surface (where a CENTRE-seated element would bury
+          // its lower half in the cake). A perch straddles the edge, and a centre-seat verge rests its
+          // mid-spine on the lip — both rim-lock. A BASE-seat verge sits flat on the top surface, so
+          // it drags freely on the top like `stand` (no burial). Stand reaches the rim with margin 0;
+          // a flat decal keeps its footprint on the cake. All derived from mode/seat + size on the
+          // instance — never a config flag. (Future: faux-ball verge → edge_drag:'outward' allows
+          // dragging OUT over the lip while still clamping inward to the rim; see PLACEMENT_CONFIG.md.)
+          const isEdgeMode = isPerch || (isVerge && !isVergeBase);
+          const edgeMargin = (isStand || isEdgeMode) ? 0 : (STICKER_SIZE / 2) * (sticker.scale ?? 1);
+          const clampPt = (x, z) => isEdgeMode ? snapToRim(shp, x, z) : topClampInset(shp, x, z, edgeMargin);
+          ({ x: newX, z: newZ } = clampPt(newX, newZ));
           const siblings = allStickers.filter(s => s.id !== sticker.id && s.zone === sticker.zone && s.tierIndex === sticker.tierIndex);
           for (const sib of siblings) {
             const selfR = (glbXRadiusCache[sticker.imageUrl] ?? STICKER_SIZE / 4) * (sticker.scale ?? 1);
@@ -1400,7 +1415,7 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
             if (dist < minDist && dist > 0.001) {
               newX = sib.x + ex * (minDist / dist);
               newZ = sib.z + ez * (minDist / dist);
-              ({ x: newX, z: newZ } = topClampInset(shp, newX, newZ, edgeMargin));
+              ({ x: newX, z: newZ } = clampPt(newX, newZ));
             }
           }
           lastValidPos.current = { x: newX, z: newZ };
@@ -1427,10 +1442,11 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
     canvas.addEventListener('pointerup', onUp);
   };
 
-  // Stand & perch: upright render — outer=position+scale, middle=Y-spin (facing), inner=X-tilt (lean).
-  // Same orientation pipeline; they differ only in py (perch straddles the edge, no seat-lift) and
-  // clip (perch isn't clipped). 2D images use Billboard so they always face the camera.
-  if (isStand || isPerch) {
+  // Stand & perch & verge: upright render — outer=position+scale, middle=Y-spin (facing), inner=X-tilt
+  // (lean). Same orientation pipeline; they differ in py (perch straddles the edge, no seat-lift),
+  // clip (perch/verge aren't clipped), facing, and lean direction (see below). Stand/perch 2D images
+  // billboard to face the camera; a verge is fixed in world space so it reclines over the actual edge.
+  if (isStand || isPerch || isVerge) {
     // Billboard must be INSIDE the world-positioned group, not wrapping it.
     // If Billboard wraps the position group, it sits at origin and rotates its
     // local frame — so any x/z offset becomes wrong world-space position.
@@ -1438,10 +1454,17 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
     // leaning swings the base up off the cake. Translate down to the base, rotate, translate back
     // (cancels when untilted; no-op for perch where seatLift = 0).
     const seatLift = standSeat ? (seatHalf ?? STICKER_SIZE / 2) : 0;
+    // Verge auto-orients radially OUTWARD: yaw so the element's local +Z points away from the cake
+    // centre (re-derived from its x/z, so it reorients as it's dragged round the rim — round cakes
+    // exactly, rect approximated as radial-from-centre), then the tilt tips its top toward that
+    // outward +Z (+angle = lean over the edge). Stand/perch keep the caller's Y-spin and lean on −X.
+    const radialYaw = isVerge ? Math.atan2(sticker.x ?? 0, sticker.z ?? 0) : 0;
+    const yaw   = radialYaw + (sticker.rotation ?? 0);
+    const tiltX = isVerge ? (sticker.tiltAngle ?? 0) : -(sticker.tiltAngle ?? 0);
     const inner = (
-      <group rotation={[0, sticker.rotation ?? 0, 0]}>
+      <group rotation={[0, yaw, 0]}>
         <group position={[0, -seatLift, 0]}>
-          <group rotation={[-(sticker.tiltAngle ?? 0), 0, 0]}>
+          <group rotation={[tiltX, 0, 0]}>
             <group position={[0, seatLift, 0]}>
               {innerContent(onDown)}
             </group>
@@ -1451,7 +1474,7 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
     );
     return (
       <group position={[sticker.x, py, sticker.z]} scale={sticker.scale}>
-        {isGlb2d ? inner : <Billboard lockX={true} lockY={false} lockZ={true}>{inner}</Billboard>}
+        {(isGlb2d || isVerge) ? inner : <Billboard lockX={true} lockY={false} lockZ={true}>{inner}</Billboard>}
       </group>
     );
   }
@@ -1983,13 +2006,24 @@ function CakeThumbnailScene({ config }) {
           );
         }
         const isPerchPv = sticker.placementMode === 'perch';
-        const py   = topY + (sticker.yOffset ?? 0) + (sticker.placementMode === 'stand' ? STICKER_SIZE / 2 * (sticker.scale ?? 1) : isPerchPv ? 0 : FLAT_STICKER_Y_OFFSET);
-        if (sticker.placementMode === 'stand' || isPerchPv) {
+        const isVergePv = sticker.placementMode === 'verge';
+        // Stand base-seats; perch & a centre-seat verge centre-seat (mid-spine on the rim edge, then
+        // recline outward). A base-seat verge (verge.seat='base') base-seats like stand.
+        const baseSeatedPv = sticker.placementMode === 'stand' || (isVergePv && sticker.vergeSeat === 'base');
+        const py   = topY + (sticker.yOffset ?? 0) + (baseSeatedPv ? STICKER_SIZE / 2 * (sticker.scale ?? 1) : (isPerchPv || isVergePv) ? 0 : FLAT_STICKER_Y_OFFSET);
+        if (baseSeatedPv || isPerchPv || isVergePv) {
+          const seatLiftPv = baseSeatedPv ? STICKER_SIZE / 2 : 0;
+          const yawPv   = (isVergePv ? Math.atan2(sticker.x ?? 0, sticker.z ?? 0) : 0) + (sticker.rotation ?? 0);
+          const tiltXPv = isVergePv ? (sticker.tiltAngle ?? 0) : -(sticker.tiltAngle ?? 0);
           return (
             <group key={sticker.id} position={[sticker.x, py, sticker.z]} scale={sticker.scale}>
-              <group rotation={[0, sticker.rotation ?? 0, 0]}>
-                <group rotation={[-(sticker.tiltAngle ?? 0), 0, 0]}>
-                  <StickerFace imageUrl={sticker.imageUrl} selected={false} color={sticker.color} groupColors={sticker.groupColors} clipY={undefined} baseRotation={sticker.baseRotation} fondant={sticker.useSharedFondantTexture} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} standUp={(sticker.placementMode === 'stand' || isPerchPv) && sticker.foldable === true} recolor={sticker.recolor} />
+              <group rotation={[0, yawPv, 0]}>
+                <group position={[0, -seatLiftPv, 0]}>
+                  <group rotation={[tiltXPv, 0, 0]}>
+                    <group position={[0, seatLiftPv, 0]}>
+                      <StickerFace imageUrl={sticker.imageUrl} selected={false} color={sticker.color} groupColors={sticker.groupColors} clipY={undefined} baseRotation={sticker.baseRotation} fondant={sticker.useSharedFondantTexture} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} standUp={(baseSeatedPv || isPerchPv || isVergePv) && sticker.foldable === true} recolor={sticker.recolor} />
+                    </group>
+                  </group>
                 </group>
               </group>
             </group>

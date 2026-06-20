@@ -130,6 +130,20 @@ export function topClampInset(shape, x, z, margin = 0) {
   return r > maxR ? { x: (x * maxR) / r, z: (z * maxR) / r } : { x, z };
 }
 
+// Snap a point (x,z) ONTO the rim perimeter (nearest edge point). Edge-seated modes (perch, verge)
+// live on the rim, so dragging moves them AROUND the rim rather than inward onto the top surface
+// (where a centre-seated element would bury its lower half in the cake). Round → project to the
+// radius; rect → nearest point on the rounded-rect perimeter (via nearestU).
+export function snapToRim(shape, x, z) {
+  if (shape.kind !== 'rect') {
+    const r = Math.hypot(x, z) || 1;
+    return { x: (x / r) * shape.radius, z: (z / r) * shape.radius };
+  }
+  const perim = perimeter(shape);
+  const p = perim.at((((nearestU(shape, x, z) % 1) + 1) % 1) * perim.length);
+  return { x: p.x, z: p.z };
+}
+
 // Is (x,z) on the top surface (margin k)? Drives tap-to-place hit testing.
 export function topContains(shape, x, z, k = 1) {
   return shape.kind === 'rect'

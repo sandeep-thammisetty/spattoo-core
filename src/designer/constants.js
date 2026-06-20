@@ -87,6 +87,8 @@ export const PLACEMENT_MODES = Object.freeze({
   STAND:            'stand',
   HUG:              'hug',
   PERCH:            'perch',   // figure seated on the rim/top edge — straddles the edge, legs over
+  VERGE:            'verge',   // rests its base on the rim lip and reclines radially OUTWARD, the rest
+                              //   cantilevered over the edge into the air (butterflies, flowers)
   FAUX_BALL_SINGLE: 'faux_ball_single',
 });
 

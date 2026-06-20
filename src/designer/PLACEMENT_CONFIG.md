@@ -24,7 +24,7 @@ section below (§1–§4) is the authoritative detail for its keys.
 ```jsonc
 {
   // ── Zones × modes (§1 <zone>, §2) — one key per surface the element offers ──
-  "top_surface": "stand",          // stand | hug | faux_ball_single | faux_balls | perch
+  "top_surface": "stand",          // stand | hug | faux_ball_single | faux_balls | perch | verge
   "side":        "hug",
   "middle_tier": "hug",
   "board":       "hug",
@@ -58,6 +58,9 @@ section below (§1–§4) is the authoritative detail for its keys.
 
   // ── Perch (a figure seated on the top edge) ──
   "perch": { "tilt_deg": 0, "y_offset": 0, "edge_inset": 0 },
+
+  // ── Verge (rests on the rim lip, reclines radially OUTWARD over the edge) ──
+  "verge": { "seat": "center", "angle_deg": 35, "y_offset": 0, "edge_inset": 0 },
 
   // ── GLB Recompose — customer-recolourable part groups ──
   "_model": {
@@ -105,9 +108,10 @@ section below (§1–§4) is the authoritative detail for its keys.
 }
 ```
 
-> Keys present in the sample but not yet in the tables below (`scatter`, `side_proud`,
-> `useSharedFondantTexture`, `perch`, `_model`, `roughness`, `metalness`) are read by `addSticker` /
-> the GLB material path — tabulate them when next touched.
+> Keys present in the sample but not yet in dedicated tables below (`scatter`, `side_proud`,
+> `useSharedFondantTexture`, `perch`, `verge`, `_model`, `roughness`, `metalness`) are read by
+> `addSticker` / the GLB material path (`verge` is summarised in the §2 modes table) — tabulate them
+> when next touched.
 
 ---
 
@@ -134,6 +138,8 @@ From `PLACEMENT_MODES` in `constants.js`:
 |---|---|---|
 | `stand` | `top_surface` | Stands upright on the surface; billboarded for 2D, full model for GLB. Size from `r`/scale. |
 | `hug` | `side`, `top_surface` | Lies flat against the surface; size derived from the wall (`hug_fill`), bends around round walls. |
+| `perch` | `rim` | A figure seated on the top edge — its centre straddles the edge (legs over the side, body above). Leans on world-X. Calibrated by `perch` (§ below). Legged 3D toppers. |
+| `verge` | `rim` | Reclines radially **OUTWARD** by `verge.angle_deg` so the body cantilevers over the edge into the air. World-oriented (never billboarded); auto-faces outward, re-orienting as it's dragged round the rim. For butterflies, flowers. Conventionally `rim`, but like every mode it's a config value usable on any allowed surface. Calibrated by `verge`: `{ seat, angle_deg, y_offset, edge_inset }` — **`seat`** = `'center'` (default; the MID-SPINE/geometry centre rests on the rim edge and the body drapes over the lip) or `'base'` (the body BASE seats on the top surface and leans from there); **`angle_deg`** default-tilt in degrees (default 35; seeds the per-instance Tilt control); **`edge_inset`** radial pull-in from the rim (− pushes out over the lip); **`y_offset`** height nudge. Dragging an edge-seated element rim-locks it (snaps to the perimeter — never inward, so a centre-seat element can't bury itself); a base-seat verge drags freely on the top like `stand`. _Planned (with the faux-ball work): **`edge_drag`** = `'rim'` (default, locked to the perimeter) \| `'outward'` (may be dragged OUT over the lip for a "spill over the edge" look, while inward is always clamped to the rim — for faux balls)._ |
 | `faux_ball_single` | `side`, `middle_tier`, `top_surface` | Renders as a faux-ball cluster; collision-spaced against siblings. |
 
 `ZONES`: `top_surface`, `side`, `middle_tier`, `board`, `rim` (`top` is an internal alias).
@@ -242,7 +248,7 @@ The complete `cake_elements` row — `placement_config` is one field of it. Writ
                                                           // A real element uses only a subset; many
                                                           // groups below are mutually exclusive.
     // ── Zones × modes — one key per surface the element offers ──
-    "top_surface": "stand",                               // stand | hug | faux_ball_single | faux_balls | perch
+    "top_surface": "stand",                               // stand | hug | faux_ball_single | faux_balls | perch | verge
     "side":        "hug",
     "middle_tier": "hug",
     "board":       "hug",
@@ -275,6 +281,9 @@ The complete `cake_elements` row — `placement_config` is one field of it. Writ
 
     // ── Perch (figure seated on the top edge) ──
     "perch": { "tilt_deg": 0, "y_offset": 0, "edge_inset": 0 },
+
+    // ── Verge (rests on the rim lip, reclines radially OUTWARD over the edge) ──
+    "verge": { "seat": "center", "angle_deg": 35, "y_offset": 0, "edge_inset": 0 },
 
     // ── GLB Recompose — customer-recolourable part groups ──
     "_model": {

@@ -1,6 +1,7 @@
 // Pure, config-driven placement logic — no React, no element-type branching. The designer and
 // the contract test both use these so behaviour can't silently diverge per element type.
-import { ZONES, PLACEMENT_MODES } from './constants.js';
+import { ZONES, PLACEMENT_MODES, STICKER_SIZE } from './constants.js';
+import { topClamp, snapToRim } from './geometry/surface.js';
 
 // Default fraction of a tier's wall height a side-hug HERO decoration fills. Tunable per
 // element via placement_config.hug_fill.
@@ -12,6 +13,75 @@ export const DEFAULT_HUG_FILL = 0.7;
 // (dihedral degrees) and placement_config.spine (split fraction, 0–1). foldable off → flat.
 export const DEFAULT_FOLD_DEG = 30;
 export const DEFAULT_SPINE    = 0.5;
+
+// Verge (placement_config.verge): an element rests its base on the rim lip and reclines radially
+// OUTWARD by this many degrees, so the rest of it cantilevers over the edge into the air. Fallback
+// used when the mode is on but `angle_deg` isn't authored — tunable per element via
+// placement_config.verge.angle_deg.
+export const DEFAULT_VERGE_ANGLE_DEG = 35;
+
+// Nudge a seat so it doesn't land exactly on a coincident sibling — in the SURFACE's own coordinate
+// system. ONE rule, shared by placement (addSticker) and duplication (duplicateSticker), so the
+// "don't stack two copies" behaviour lives in a single place rather than per call-site. The branch is
+// on the surface's coordinate system (geometry), never on element type/slug (INVARIANTS #1/#2):
+//   • top_surface → cartesian: push away from each colliding sibling by `step`, kept inside the tier.
+//   • rim        → same cartesian push, then re-snapped onto the rim perimeter (edge-seated modes).
+//   • side round → walk the seat angle `theta` until clear of any near sibling (same θ±, similar y).
+//   • side rect  → walk the perimeter fraction `u` until clear.
+// `pos` carries whatever coords that surface uses ({x,z} top/rim; {theta,y} round wall; {u,y} rect);
+// the returned object is `pos` with the relevant coord(s) nudged. `siblings` = same surface + tier
+// (the original is a sibling for duplication, so the copy is pushed off it). Pure.
+export function deOverlapSeat(shape, zone, pos, siblings, step = STICKER_SIZE) {
+  const isSide = zone === ZONES.SIDE || zone === ZONES.MIDDLE_TIER;
+  if (isSide && pos.u != null) {
+    let u = pos.u, guard = 0;
+    const near = s => s.u != null && Math.abs((((u - s.u) % 1) + 1) % 1) < 0.04 && Math.abs((pos.y ?? 0) - (s.y ?? 0)) < 0.2;
+    while (guard++ < 64 && siblings.some(near)) u += 0.04;
+    return { ...pos, u: (((u % 1) + 1) % 1) };
+  }
+  if (isSide) {
+    const angDist = (a, b) => Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b)));
+    let theta = pos.theta ?? 0, guard = 0;
+    const near = s => angDist(theta, s.theta ?? 0) < 0.15 && Math.abs((pos.y ?? 0) - (s.y ?? 0)) < 0.2;
+    while (guard++ < 64 && siblings.some(near)) theta += 0.5;
+    return { ...pos, theta: (((theta % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI)) };
+  }
+  // Cartesian surfaces (top_surface, rim): one push-away per colliding sibling.
+  let x = pos.x ?? 0, z = pos.z ?? 0;
+  for (const sib of siblings) {
+    if (sib.x == null && sib.z == null) continue;
+    const ex = x - (sib.x ?? 0), ez = z - (sib.z ?? 0);
+    const d = Math.hypot(ex, ez);
+    if (d < step) {
+      const dir = d > 0.001 ? { x: ex / d, z: ez / d } : { x: 1, z: 0 };
+      x = (sib.x ?? 0) + dir.x * step;
+      z = (sib.z ?? 0) + dir.z * step;
+    }
+  }
+  ({ x, z } = zone === ZONES.RIM ? snapToRim(shape, x, z) : topClamp(shape, x, z, 0.88));
+  return { ...pos, x, z };
+}
+
+// Front-edge seat for the edge-seated modes (perch, verge): where the instance sits the moment it
+// lands on a rim slot, and the lean it carries. Pure so BOTH placement paths seed identically —
+// `addSticker` (hero add) and the chooser's scatter "move" path. Returns null for non-edge modes
+// (caller keeps its own seat). `shp` is the tier's shape (from tierShape); reads only config.
+//   • perch → centre straddles the edge at the lip, calibrated lean from placement_config.perch.tilt_deg.
+//   • verge → centre-seated so the MID-SPINE rests ON the rim edge (z = radius) and the body drapes
+//     over the lip, reclining OUTWARD by placement_config.verge.angle_deg (default 35°).
+// `edge_inset` is the radial pull-IN from the rim (+ = inward, − = pushed out over the lip), default 0
+// so the contact lands right on the edge. Overridable via config.
+export function edgeSeatSeed(placementConfig, shp, mode) {
+  const isPerch = mode === PLACEMENT_MODES.PERCH;
+  const isVerge = mode === PLACEMENT_MODES.VERGE;
+  if (!isPerch && !isVerge) return null;
+  const cfg = (isVerge ? placementConfig?.verge : placementConfig?.perch) ?? {};
+  const edge = shp.kind === 'rect' ? shp.halfD : shp.radius;
+  const tiltAngle = isVerge
+    ? (cfg.angle_deg ?? DEFAULT_VERGE_ANGLE_DEG) * Math.PI / 180
+    : (cfg.tilt_deg ?? 0) * Math.PI / 180;
+  return { x: 0, z: edge - (cfg.edge_inset ?? 0), tiltAngle, yOffset: cfg.y_offset ?? 0 };
+}
 
 // Render-time size for a side-hug hero decoration: it fills `fill` of the tier WALL HEIGHT,
 // independent of placement_config.r (which stays the absolute size for `stand`). Pure so the

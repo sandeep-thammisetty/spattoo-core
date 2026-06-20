@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
-import { TIER_RADII, BOTTOM_BASE, BOTTOM_H, TIER_HEIGHT_STEP, STICKER_SIZE, ZONES, PLACEMENT_MODES } from '../constants.js';
-import { tierShape, topClamp } from '../geometry/surface.js';
-import { facingOffsetRadians } from '../placement.js';
+import { TIER_RADII, BOTTOM_BASE, BOTTOM_H, TIER_HEIGHT_STEP, ZONES, PLACEMENT_MODES } from '../constants.js';
+import { tierShape } from '../geometry/surface.js';
+import { facingOffsetRadians, edgeSeatSeed, deOverlapSeat } from '../placement.js';
 import { FROSTING_TYPES, DEFAULT_FROSTING } from '../frostings.js';
 import { DEFAULT_STYLE } from '../creamStyles.js';
 
@@ -246,50 +246,44 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
   function addSticker(element, zone, tierIndex, placementMode, position = {}, extra = {}) {
     const isGlb = /\.(glb|gltf)(\?|$)/i.test(element.image_url ?? '');
     const defaultScale = element.placement_config?.r ?? (isGlb ? 2.5 : 1);
-    // Perch calibration (tier-relative): the figurine calibrator writes these into placement_config.perch;
-    // we seed them onto the instance so the figure is seated/leaning correctly the moment it's placed.
-    const perchCfg = element.placement_config?.perch ?? {};
-    const isPerchMode = placementMode === PLACEMENT_MODES.PERCH;
-    const perchTilt = isPerchMode ? ((perchCfg.tilt_deg ?? 0) * Math.PI / 180) : 0;
-    const perchYOffset = isPerchMode ? (perchCfg.y_offset ?? 0) : 0;
+    // Edge-seated modes (perch, verge) seat onto the front rim edge and carry a calibrated lean —
+    // computed by the shared edgeSeatSeed helper (same seed the chooser's move path uses, so both
+    // paths land identically). Verge leans about the rim tangent at render (radial-outward); perch
+    // straddles the edge with a fixed world-X lean.
+    const isEdgeSeated = placementMode === PLACEMENT_MODES.PERCH || placementMode === PLACEMENT_MODES.VERGE;
     const newId = extra.id ?? Date.now();   // returned so callers can select the just-added sticker
     setDesign(prev => {
       let px = position.x ?? 0;
+      let seatTilt = 0, seatYOffset = 0;   // overridden by edgeSeatSeed for perch/verge below
       let pz = position.z ?? 0;
       // Seat angle/height for round side placements (hug/default). Resolved below so a re-added
       // instance never lands exactly on a coincident sibling. (faux_ball repurposes px/pz instead.)
       let seatTheta = position.theta ?? 0;
       let seatY = position.y ?? (BOTTOM_BASE + BOTTOM_H * 0.45);
       if (placementMode === PLACEMENT_MODES.STAND && zone === ZONES.TOP_SURFACE) {
-        // Nudge by a fixed STICKER_SIZE gap so both toppers have different centres
-        // and are separately selectable. Scale is intentionally ignored — the user
-        // will drag to the final position; drag-time collision handles visual overlap.
+        // De-overlap off coincident stand siblings so both toppers have separate, selectable centres
+        // (drag-time collision handles the rest). Shared rule — see deOverlapSeat.
         const shp = tierShape(prev.tiers[tierIndex ?? 0] ?? prev.tiers[0]);
         const siblings = prev.stickers.filter(
           s => s.zone === ZONES.TOP_SURFACE && s.tierIndex === (tierIndex ?? 0) && s.placementMode === PLACEMENT_MODES.STAND
         );
-        for (const sib of siblings) {
-          const ex = px - (sib.x ?? 0), ez = pz - (sib.z ?? 0);
-          const d = Math.sqrt(ex * ex + ez * ez);
-          if (d < STICKER_SIZE) {
-            const dir = d > 0.001 ? { x: ex / d, z: ez / d } : { x: 1, z: 0 };
-            px = (sib.x ?? 0) + dir.x * STICKER_SIZE;
-            pz = (sib.z ?? 0) + dir.z * STICKER_SIZE;
-          }
-        }
-        ({ x: px, z: pz } = topClamp(shp, px, pz, 0.88));
+        ({ x: px, z: pz } = deOverlapSeat(shp, ZONES.TOP_SURFACE, { x: px, z: pz }, siblings));
       }
-      if (placementMode === PLACEMENT_MODES.PERCH) {
-        // A perch ALWAYS starts on the FRONT edge (toward the camera, +z) — a perch in the centre
-        // would bury the figure inside the cake. The renderer straddles it across the top edge; the
-        // customer drags it around the rim afterwards. Nudge off a coincident perch sibling.
+      if (isEdgeSeated) {
+        // Edge-seated modes (perch, verge) ALWAYS start on the FRONT edge (toward the camera, +z) — in
+        // the centre a perch would bury the figure / a verge would have nothing to lean over. Seed via
+        // the shared helper, then nudge off a coincident same-mode sibling. The customer drags it
+        // around the rim afterwards.
         const shp = tierShape(prev.tiers[tierIndex ?? 0] ?? prev.tiers[0]);
-        const edge = shp.kind === 'rect' ? shp.halfD : shp.radius;
-        px = 0;
-        pz = edge - (perchCfg.edge_inset ?? 0);   // inset from the rim, from calibration
-        for (const sib of prev.stickers.filter(s => s.placementMode === PLACEMENT_MODES.PERCH && s.tierIndex === (tierIndex ?? 0))) {
-          if (Math.abs(px - (sib.x ?? 0)) < STICKER_SIZE && Math.abs(pz - (sib.z ?? 0)) < STICKER_SIZE) px += STICKER_SIZE;
-        }
+        const seed = edgeSeatSeed(element.placement_config, shp, placementMode);
+        px = seed.x;
+        pz = seed.z;
+        seatTilt = seed.tiltAngle;
+        seatYOffset = seed.yOffset;
+        // De-overlap around the rim off a coincident same-mode sibling (shared rule — keeps it on the
+        // perimeter via deOverlapSeat's rim branch).
+        const siblings = prev.stickers.filter(s => s.placementMode === placementMode && s.tierIndex === (tierIndex ?? 0));
+        ({ x: px, z: pz } = deOverlapSeat(shp, ZONES.RIM, { x: px, z: pz }, siblings));
       }
       if (placementMode === PLACEMENT_MODES.FAUX_BALL_SINGLE) {
         const isSide = zone === ZONES.SIDE || zone === ZONES.MIDDLE_TIER;
@@ -336,33 +330,18 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
         const isSide = zone === ZONES.SIDE || zone === ZONES.MIDDLE_TIER;
         const isScatterSib = s => s.placementMode !== PLACEMENT_MODES.STAND && s.placementMode !== PLACEMENT_MODES.FAUX_BALL_SINGLE;
         if (isSide && position.u == null) {
-          // Round wall: step the seat angle around the tier until clear of any coincident sibling
-          // (same tier, near-equal theta+y). ~29° per step; guard caps the walk.
-          const angDist = (a, b) => Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b)));
+          // Round wall: walk the seat angle until clear of any coincident sibling (shared rule).
           const siblings = prev.stickers.filter(
             s => (s.zone === ZONES.SIDE || s.zone === ZONES.MIDDLE_TIER) && s.tierIndex === (tierIndex ?? 0) && isScatterSib(s)
           );
-          let guard = 0;
-          while (guard++ < 64 && siblings.some(s => angDist(seatTheta, s.theta ?? 0) < 0.15 && Math.abs(seatY - (s.y ?? 0)) < 0.2)) {
-            seatTheta += 0.5;
-          }
-          seatTheta = ((seatTheta % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+          ({ theta: seatTheta } = deOverlapSeat(null, zone, { theta: seatTheta, y: seatY }, siblings));
         } else if (zone === ZONES.TOP_SURFACE) {
-          // Flat-on-top decals: same x/z nudge the stand path uses, kept inside the tier.
+          // Flat-on-top decals: cartesian nudge, kept inside the tier (shared rule).
           const shp = tierShape(prev.tiers[tierIndex ?? 0] ?? prev.tiers[0]);
           const siblings = prev.stickers.filter(
             s => s.zone === ZONES.TOP_SURFACE && s.tierIndex === (tierIndex ?? 0) && isScatterSib(s)
           );
-          for (const sib of siblings) {
-            const ex = px - (sib.x ?? 0), ez = pz - (sib.z ?? 0);
-            const d = Math.sqrt(ex * ex + ez * ez);
-            if (d < STICKER_SIZE) {
-              const dir = d > 0.001 ? { x: ex / d, z: ez / d } : { x: 1, z: 0 };
-              px = (sib.x ?? 0) + dir.x * STICKER_SIZE;
-              pz = (sib.z ?? 0) + dir.z * STICKER_SIZE;
-            }
-          }
-          ({ x: px, z: pz } = topClamp(shp, px, pz, 0.88));
+          ({ x: px, z: pz } = deOverlapSeat(shp, ZONES.TOP_SURFACE, { x: px, z: pz }, siblings));
         }
       }
       return {
@@ -394,6 +373,10 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
           foldable:      element.placement_config?.foldable === true,
           fold:          element.placement_config?.fold ?? null,
           spine:         element.placement_config?.spine ?? null,
+          // Verge seat anchor (placement_config.verge.seat): 'center' (default) rests the mid-spine on
+          // the rim edge so the body drapes over the lip; 'base' seats the body base on the surface.
+          // Read by the render's isVergeBase branch; null/absent → centre.
+          vergeSeat:     element.placement_config?.verge?.seat ?? null,
           // Pixel-recolour region descriptor for a 2D image sticker (e.g. recolour only a card
           // butterfly's wings). Present → the renderer recolours those pixels to `color` (driven by
           // the same ColorWheel/allowed_actions.color as GLB tint). Absent → image renders as-is.
@@ -408,10 +391,10 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
           // Authored in degrees (calibrator convention); facingOffsetRadians resolves the unit to
           // the radians THREE/baseRotation use. Config-driven, applied by the renderer; null = +z.
           baseRotation:  facingOffsetRadians(element.placement_config),
-          yOffset:       perchYOffset,   // perch: seat-height offset from the tier top (calibrated)
+          yOffset:       seatYOffset,    // perch/verge: seat-height offset from the tier top (calibrated)
           rotation:      0,
           radialOffset:  0,
-          tiltAngle:     perchTilt,      // perch: seated lean (calibrated)
+          tiltAngle:     seatTilt,       // perch: seated straddle-lean; verge: outward recline (calibrated)
           groupId:       null,
           // Pattern membership: parts of one decor_pattern share a patternId, and carry the source
           // pattern element's id so the UI can present the set as ONE card (abstracting the parts)
@@ -564,12 +547,15 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     setDesign(prev => {
       const original = prev.stickers.find(s => s.id === id);
       if (!original) return prev;
-      const offset = original.zone === ZONES.TOP_SURFACE
-        ? { x: original.x + 0.15 }
-        : (original.u != null ? { u: (((original.u + 0.04) % 1) + 1) % 1 } : { theta: original.theta + 0.3 });
+      // The copy starts ON the original, then de-overlaps off it (and any other same-surface sibling)
+      // using the ONE shared surface-aware rule — so it lands visibly separate, in the right coordinate
+      // system for its surface (x/z on top, around the rim, theta/u on a wall). No per-zone offset here.
+      const shp = tierShape(prev.tiers[original.tierIndex ?? 0] ?? prev.tiers[0]);
+      const siblings = prev.stickers.filter(s => s.zone === original.zone && s.tierIndex === original.tierIndex);
+      const seat = deOverlapSeat(shp, original.zone, { x: original.x, z: original.z, theta: original.theta, y: original.y, u: original.u }, siblings);
       return {
         ...prev,
-        stickers: [...prev.stickers, { ...original, id: Date.now(), ...offset }],
+        stickers: [...prev.stickers, { ...original, id: Date.now(), ...seat }],
       };
     });
   }

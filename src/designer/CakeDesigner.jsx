@@ -7,7 +7,8 @@ import { CAMERA_POSITION, CAMERA_POSITION_MOBILE, PIPING_FRONT_ANGLE, TIER_RADII
 import PipingPreview from './canvas/PipingPreview.jsx';
 import TopperPreview from './canvas/TopperPreview.jsx';
 import { CakeSpinner, CakeSpinnerFill, DecorLoadingOverlay } from './canvas/CakeSpinner.jsx';
-import { isSinglePerSlot, placementSlots, isDynamicHug, facingOffsetRadians, scaleRangeOf, DEFAULT_FOLD_DEG } from './placement.js';
+import { isSinglePerSlot, placementSlots, isDynamicHug, facingOffsetRadians, scaleRangeOf, DEFAULT_FOLD_DEG, edgeSeatSeed } from './placement.js';
+import { tierShape } from './geometry/surface.js';
 import { SHELL_HEIGHT_FRAC, getShellExtents, getFestoonExtents, festoonSig } from './canvas/pipingMetrics.js';
 import { useCakeDesign } from './hooks/useCakeDesign';
 import FrostingTypePicker from './controls/FrostingPicker.jsx';
@@ -2983,9 +2984,20 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       for (let i = 0; i < slot.tierIndex; i++) baseY += (canvasConfig.tiers[i]?.height ?? BOTTOM_H);
       const tierH = canvasConfig.tiers[slot.tierIndex]?.height ?? BOTTOM_H;
       const mode = pc[slot.zone];
-      const pos = slot.zone === ZONES.TOP_SURFACE ? { x: 0, z: 0 }
-        : slot.zone === ZONES.RIM ? {}   // addSticker seeds the front-edge seat for perch
-        : { theta: 0, y: baseY + tierH * 0.45 };
+      // Rim: seed the front-edge seat + lean via the SAME helper addSticker uses, so the move path
+      // (updateSticker) lands identically to the add path. Non-edge rim modes get a bare edge point.
+      let pos;
+      if (slot.zone === ZONES.RIM) {
+        const shp = tierShape(design.tiers[slot.tierIndex] ?? design.tiers[0]);
+        const seed = edgeSeatSeed(pc, shp, mode);
+        pos = seed
+          ? { x: seed.x, z: seed.z, tiltAngle: seed.tiltAngle, yOffset: seed.yOffset }
+          : { x: 0, z: (shp.kind === 'rect' ? shp.halfD : shp.radius) };
+      } else if (slot.zone === ZONES.TOP_SURFACE) {
+        pos = { x: 0, z: 0 };
+      } else {
+        pos = { theta: 0, y: baseY + tierH * 0.45 };
+      }
       return { mode, pos };
     };
     const slots = placementSlots(srcEl, design.tiers.length).map(slot => {
