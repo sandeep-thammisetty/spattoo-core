@@ -183,51 +183,45 @@ export function packCluster({ count, radii, cake }) {
   return balls.map(b => ({ x: b.c[0], y: b.c[1], z: b.c[2], r: b.r }));
 }
 
-// Two circles (centre x0,z0 r0 / x1,z1 r1) → their two intersection points, or null if they don't meet
-// (too far apart, one inside the other, or concentric). Used for in-plane pocket seating.
-export function circleIntersect(x0, z0, r0, x1, z1, r1) {
-  const dx = x1 - x0, dz = z1 - z0, d = Math.hypot(dx, dz);
-  if (d < 1e-9 || d > r0 + r1 || d < Math.abs(r0 - r1)) return null;
-  const a = (r0 * r0 - r1 * r1 + d * d) / (2 * d);
-  const h2 = r0 * r0 - a * a;
-  if (h2 < 0) return null;
-  const h = Math.sqrt(h2);
-  const mx = x0 + (a * dx) / d, mz = z0 + (a * dz) / d;
-  const ox = -(dz / d) * h, oz = (dx / d) * h;
-  return { x1: mx + ox, z1: mz + oz, x2: mx - ox, z2: mz - oz };
-}
-
-// In-plane (x/z) POCKET seat for a ball of radius r dropped near others, all resting on the same flat
-// surface (each centre at surfaceY + its own radius). Two such balls of radii a,b touch when their
-// in-plane distance = 2·√(a·b) (3D tangency at differing heights). Returns {x,z} nestled tangent to the
-// 1–2 nearest neighbours toward the drop point (px,pz), or null when none is near enough to snap (so
-// the caller keeps free placement). `neighbors` = [{x,z,r}]. `band` = how close (× r) counts as "near".
-export function pocketSeat2D(px, pz, r, neighbors, band = 0.6) {
-  const ns = neighbors ?? [];
-  const touch = nr => 2 * Math.sqrt(r * nr);                       // in-plane tangency distance
-  const maxJump = 2 * r;                                           // a snap must stay NEAR the cursor —
-  //                                                                 never teleport to the far tangency point.
-  const drop = (x, z) => Math.hypot(x - px, z - pz);
-  // A seat is valid only if it stays by the cursor AND penetrates nothing (dist ≥ tangency for all).
-  const ok = (x, z) => drop(x, z) <= maxJump && ns.every(n => Math.hypot(x - n.x, z - n.z) >= touch(n.r) - 1e-3);
-  const near = ns
-    .map(n => ({ n, t: touch(n.r), d: Math.hypot(px - n.x, pz - n.z) }))
-    .filter(o => o.d < o.t + band * r)                             // within a snap band of contact
-    .sort((a, b) => Math.abs(a.d - a.t) - Math.abs(b.d - b.t));    // closest to its tangency ring first
-  if (!near.length) return null;
-  // Pocket: tangent to a close PAIR (nearest pairs first); take ONLY the solution nearest the cursor that
-  // also clears the maxJump + no-penetration test — so we nestle on the side the user is dragging from.
-  for (let i = 0; i < near.length; i++) {
-    for (let j = i + 1; j < near.length; j++) {
-      const sol = circleIntersect(near[i].n.x, near[i].n.z, near[i].t, near[j].n.x, near[j].n.z, near[j].t);
-      if (!sol) continue;
-      const c = drop(sol.x1, sol.z1) <= drop(sol.x2, sol.z2) ? { x: sol.x1, z: sol.z1 } : { x: sol.x2, z: sol.z2 };
-      if (ok(c.x, c.z)) return c;
+// Physically-seated rest for a MANUALLY placed/dragged ball of radius r near horizontal (px,pz).
+// A real ball either sits on the cake surface, or is CRADLED on ≥3 balls — you can't balance one on a
+// single ball or two (no stable support). So:
+//   1. If the drop is near a stable CRADLE — a point tangent to three nearby balls (apollo3, topmost),
+//      on/above the surface, penetrating nothing — snap there (it stacks on top).
+//   2. Otherwise rest on the SURFACE, pushed out of every ball it would overlap (3D de-overlap) so it
+//      touches without penetrating and never floats.
+// `balls` = [{x,y,z,r}] (3D centres). Returns the ball-CENTRE {x,y,z}.
+export function manualSeat(px, pz, r, balls, surfaceY) {
+  const bs = balls ?? [];
+  const surfY = surfaceY + r;
+  const clearOf = (x, y, z) => bs.every(b => Math.hypot(x - b.x, y - b.y, z - b.z) >= r + b.r - 1e-3);
+  // 1. Stable 3-ball cradle nearest the drop (only the few closest balls, to keep the triple loop cheap).
+  const near = bs
+    .map(b => ({ b, d: Math.hypot(px - b.x, pz - b.z) }))
+    .filter(o => o.d < o.b.r + 2 * r)            // close enough to possibly support
+    .sort((a, b) => a.d - b.d).slice(0, 6).map(o => o.b);
+  let cradle = null, bestD = Infinity;
+  for (let i = 0; i < near.length; i++)
+    for (let j = i + 1; j < near.length; j++)
+      for (let k = j + 1; k < near.length; k++) {
+        const a = near[i], b = near[j], c = near[k];
+        const g = apollo3([a.x, a.y, a.z], a.r, [b.x, b.y, b.z], b.r, [c.x, c.y, c.z], c.r, r);
+        if (!g || g[1] < surfY - 1e-6 || !clearOf(g[0], g[1], g[2])) continue;
+        const d = Math.hypot(g[0] - px, g[2] - pz);
+        if (d < bestD && d < 2 * r) { bestD = d; cradle = g; }     // must be near where the user dropped
+      }
+  if (cradle) return { x: cradle[0], y: cradle[1], z: cradle[2] };
+  // 2. Surface seat, de-overlapped in 3D against everything (so it touches but never penetrates).
+  let x = px, z = pz;
+  for (let pass = 0; pass < 10; pass++) {
+    let moved = false;
+    for (const b of bs) {
+      const dy = surfY - b.y, need = (r + b.r) ** 2 - dy * dy;     // in-plane gap needed at the surface
+      if (need <= 0) continue;                                     // b too high/low to block the surface here
+      const t = Math.sqrt(need), dx = x - b.x, dz = z - b.z, d = Math.hypot(dx, dz);
+      if (d < t - 1e-4) { const m = d || 1e-3; x = b.x + (dx / m) * t; z = b.z + (dz / m) * t; moved = true; }
     }
+    if (!moved) break;
   }
-  // No clear pocket: rest tangent to the single nearest, toward the drop — only if near + non-penetrating.
-  const { n, t } = near[0];
-  const ux = px - n.x, uz = pz - n.z, m = Math.hypot(ux, uz) || 1;
-  const one = { x: n.x + (ux / m) * t, z: n.z + (uz / m) * t };
-  return ok(one.x, one.z) ? one : null;                            // else null → caller keeps free/de-overlap
+  return { x, y: surfY, z };
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { apollo3, packCluster, clusterRadii, CLUSTER_SECOND_FRAC, CLUSTER_THIRD_FRAC, pocketSeat2D, circleIntersect } from './spherePacking.js';
+import { apollo3, packCluster, clusterRadii, CLUSTER_SECOND_FRAC, CLUSTER_THIRD_FRAC, manualSeat } from './spherePacking.js';
 
 const dist3 = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 // A flat top with no reachable rim (huge R) — exercises the pure packing invariants.
@@ -139,46 +139,39 @@ describe('packCluster — supported & draping on a real cake (#5/#6)', () => {
   });
 });
 
-describe('pocketSeat2D — manual drag snaps a ball tangent into a pocket', () => {
-  const dist = (ax, az, bx, bz) => Math.hypot(ax - bx, az - bz);
+describe('manualSeat — physical seat: surface (de-overlapped) or a stable 3-ball cradle, never on 1–2', () => {
+  const surfaceY = 0, r = 0.2;
+  const d3 = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
 
-  it('returns null when no neighbour is near the drop', () => {
-    expect(pocketSeat2D(5, 5, 0.2, [{ x: 0, z: 0, r: 0.2 }])).toBeNull();
-    expect(pocketSeat2D(0, 0, 0.2, [])).toBeNull();
+  it('empty surface → rests on the cake (centre = surfaceY + r), at the cursor', () => {
+    const s = manualSeat(2, 2, r, [], surfaceY);
+    expect(s).toMatchObject({ x: 2, z: 2 });
+    expect(s.y).toBeCloseTo(r, 9);
   });
 
-  it('one near neighbour → rests tangent to it toward the drop (touch = 2√(r·rn))', () => {
-    const r = 0.2, n = { x: 0, z: 0, r: 0.2 };
-    const p = pocketSeat2D(0.35, 0, r, [n]);            // drop just inside contact, to the +x side
-    expect(p).not.toBeNull();
-    expect(dist(p.x, p.z, n.x, n.z)).toBeCloseTo(2 * Math.sqrt(r * n.r), 6);  // exactly tangent
-    expect(p.x).toBeGreaterThan(0);                     // toward the drop
+  it('dropped ONTO a single ball → does NOT balance on it; slides to the surface beside it', () => {
+    const b = { x: 0, y: r, z: 0, r };
+    const s = manualSeat(0.05, 0, r, [b], surfaceY);    // dropped almost on top of one ball
+    expect(s.y).toBeCloseTo(r, 6);                       // stayed on the surface (no 1-ball stack)
+    expect(d3({ ...s }, b)).toBeGreaterThanOrEqual(r + b.r - 3e-3);   // pushed out, no penetration
   });
 
-  it('two near neighbours → nestles tangent to BOTH (the pocket)', () => {
-    const r = 0.2;
-    const a = { x: -0.2, z: 0, r: 0.2 }, b = { x: 0.2, z: 0, r: 0.2 };  // two balls with a gap between
-    const p = pocketSeat2D(0, 0.1, r, [a, b]);          // drop in the gap, +z side
-    expect(p).not.toBeNull();
-    expect(dist(p.x, p.z, a.x, a.z)).toBeCloseTo(2 * Math.sqrt(r * a.r), 5);  // tangent to A
-    expect(dist(p.x, p.z, b.x, b.z)).toBeCloseTo(2 * Math.sqrt(r * b.r), 5);  // tangent to B
-    expect(p.z).toBeGreaterThan(0);                     // the solution on the drop side
-  });
-
-  it('never returns a seat that penetrates a THIRD ball', () => {
-    const r = 0.2;
-    // Three mutually-touching balls in a tight triangle; dragging a 4th into the middle has no room.
+  it('dropped into the centre of THREE → cradled on top, tangent, no penetration', () => {
     const tri = [
-      { x: 0, z: 0, r: 0.2 },
-      { x: 0.4, z: 0, r: 0.2 },
-      { x: 0.2, z: 0.346, r: 0.2 },
+      { x: 0, y: r, z: 0, r },
+      { x: 0.4, y: r, z: 0, r },
+      { x: 0.2, y: r, z: 0.346, r },
     ];
-    const p = pocketSeat2D(0.2, 0.12, r, tri);   // drop in the crowded centre
-    if (p) for (const n of tri) expect(dist(p.x, p.z, n.x, n.z)).toBeGreaterThanOrEqual(2 * Math.sqrt(r * n.r) - 2e-3);
+    const cx = 0.2, cz = 0.115;
+    const s = manualSeat(cx, cz, r, tri, surfaceY);
+    expect(s.y).toBeGreaterThan(r + 1e-3);              // it stacked on top of the three
+    for (const b of tri) expect(d3(s, b)).toBeGreaterThanOrEqual(r + b.r - 1e-2);  // no penetration
   });
 
-  it('circleIntersect returns null for non-meeting circles', () => {
-    expect(circleIntersect(0, 0, 1, 5, 0, 1)).toBeNull();   // too far
-    expect(circleIntersect(0, 0, 1, 0, 0, 0.1)).toBeNull(); // one inside the other
+  it('two balls only → still no stack; rests on the surface, penetrating neither', () => {
+    const two = [{ x: -0.18, y: r, z: 0, r }, { x: 0.18, y: r, z: 0, r }];
+    const s = manualSeat(0, 0.02, r, two, surfaceY);
+    expect(s.y).toBeCloseTo(r, 6);                       // can't balance on two → surface
+    for (const b of two) expect(d3(s, b)).toBeGreaterThanOrEqual(r + b.r - 3e-3);
   });
 });

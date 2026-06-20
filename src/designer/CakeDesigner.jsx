@@ -9,7 +9,7 @@ import TopperPreview from './canvas/TopperPreview.jsx';
 import { CakeSpinner, CakeSpinnerFill, DecorLoadingOverlay } from './canvas/CakeSpinner.jsx';
 import { isSinglePerSlot, placementSlots, isDynamicHug, facingOffsetRadians, scaleRangeOf, DEFAULT_FOLD_DEG, edgeSeatSeed } from './placement.js';
 import { tierShape } from './geometry/surface.js';
-import { packCluster, clusterRadii, pocketSeat2D } from './geometry/spherePacking.js';
+import { packCluster, clusterRadii, manualSeat } from './geometry/spherePacking.js';
 import { SHELL_HEIGHT_FRAC, getShellExtents, getFestoonExtents, festoonSig } from './canvas/pipingMetrics.js';
 import { useCakeDesign } from './hooks/useCakeDesign';
 import FrostingTypePicker from './controls/FrostingPicker.jsx';
@@ -2370,6 +2370,19 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     setSelectedEl({ type: 'sticker', id: newId });
     setSelectedStickerIds(new Set([newId]));
   }
+  // Resize a manual cluster ball, then RE-SETTLE it so growing/shrinking can't leave it penetrating its
+  // neighbours — it re-seats on the surface (de-overlapped) or a stable cradle at the new radius.
+  function resizeClusterBall(id, scale) {
+    const st = design.stickers.find(s => s.id === id);
+    if (!st?.clusterBall || st.zone !== ZONES.TOP_SURFACE) { updateSticker(id, { scale }); return; }
+    const { topY } = tierGeom(st.tierIndex);
+    const selfR = CLUSTER_BASE_R * scale;
+    const balls = design.stickers
+      .filter(s => s.id !== id && s.clusterBall && s.zone === ZONES.TOP_SURFACE && s.tierIndex === st.tierIndex)
+      .map(s => { const sR = CLUSTER_BASE_R * (s.scale ?? 1); return { x: s.x, z: s.z, y: topY + (s.yOffset ?? 0) + sR, r: sR }; });
+    const seat = manualSeat(st.x ?? 0, st.z ?? 0, selfR, balls, topY);
+    updateSticker(id, { scale, x: seat.x, z: seat.z, yOffset: seat.y - topY - selfR });
+  }
   // The cluster's CURRENT palette = the distinct ball colours in placement order (reconstructs what
   // the customer chose, so a re-pack / re-read can reapply it).
   function clusterPaletteOf(clusterId) {
@@ -2525,17 +2538,20 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       ? { ...hit, x: 0, z: 0 }
       : hit;
 
-    // Manual cluster: a cluster ball DROPPED near others on the top nestles into the pocket between its
-    // nearest cluster-ball neighbours (tangent, no overlap) — placed `exact` so de-overlap can't undo the
-    // seat. Same pure helper the in-canvas drag uses. Config-gated (placement_config.cluster).
+    // Manual faux-ball arrangement: a cluster ball DROPPED on the top is physically seated — on the
+    // surface (de-overlapped, touches but never penetrates) or cradled on ≥3 balls when dropped onto a
+    // real pocket; never balanced on 1–2, never floating. Placed `exact` (verbatim seat + yOffset) so
+    // de-overlap can't shove it off. Config-gated (placement_config.cluster).
     let dropHit = effectiveHit, dropExtra;
     if (element.placement_config?.cluster && effectiveHit.zone === ZONES.TOP_SURFACE) {
       const selfR = CLUSTER_BASE_R * (element.placement_config?.r ?? 2.5);
-      const neighbors = design.stickers
+      const { topY } = tierGeom(effectiveHit.tierIndex);
+      const balls = design.stickers
         .filter(s => s.clusterBall && s.zone === ZONES.TOP_SURFACE && s.tierIndex === effectiveHit.tierIndex)
-        .map(s => ({ x: s.x, z: s.z, r: CLUSTER_BASE_R * (s.scale ?? 1) }));
-      const snap = pocketSeat2D(effectiveHit.x ?? 0, effectiveHit.z ?? 0, selfR, neighbors);
-      if (snap) { dropHit = { ...effectiveHit, x: snap.x, z: snap.z }; dropExtra = { exact: true }; }
+        .map(s => { const sR = CLUSTER_BASE_R * (s.scale ?? 1); return { x: s.x, z: s.z, y: topY + (s.yOffset ?? 0) + sR, r: sR }; });
+      const seat = manualSeat(effectiveHit.x ?? 0, effectiveHit.z ?? 0, selfR, balls, topY);
+      dropHit = { ...effectiveHit, x: seat.x, z: seat.z };
+      dropExtra = { exact: true, yOffset: seat.y - topY - selfR };
     }
     const newId = addSticker(element, dropHit.zone, dropHit.tierIndex, placementMode ?? 'hug', dropHit, dropExtra);
     setElementsOpen(false);
@@ -3444,6 +3460,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             // Multi-selection → set the same size on all selected (so a pattern's parts stay equal);
             // otherwise just this sticker.
             if (selectedStickerIds.size > 1 && selectedStickerIds.has(el.id)) scaleStickers([...selectedStickerIds], v);
+            else if (sticker?.clusterBall) resizeClusterBall(el.id, v);   // re-settle so it can't grow into others
             else updateSticker(el.id, { scale: v });
           }} />,
       ] });

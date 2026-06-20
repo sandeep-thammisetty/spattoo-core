@@ -17,7 +17,7 @@ import {
 import { pointerRay, cylinderHit, planeHit, buildRay } from '../utils/raycasting.js';
 import { getFondantNormalMap, applyBoxUVs } from '../shared/textures/fondantTexture.js';
 import { tierShape, topClamp, topClampInset, topContains, boxHit, nearestU, rectSidePlacement, perimeter, snapToRim } from '../geometry/surface.js';
-import { pocketSeat2D } from '../geometry/spherePacking.js';
+import { manualSeat } from '../geometry/spherePacking.js';
 import { hugScale, isDynamicHug, wallClampY, DEFAULT_HUG_FILL, DEFAULT_FOLD_DEG, DEFAULT_SPINE } from '../placement.js';
 import { recolorImageData } from '../shared/color/imageRecolor.js';
 import { applyGradient } from '../shared/color/gradientMaterial.js';
@@ -989,16 +989,17 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
           ({ x: newX, z: newZ } = clampPt(newX, newZ));
           const siblings = allStickers.filter(s => s.id !== sticker.id && s.zone === sticker.zone && s.tierIndex === sticker.tierIndex);
           const selfR = (glbXRadiusCache[sticker.imageUrl] ?? STICKER_SIZE / 4) * (sticker.scale ?? 1);
-          // Manual cluster building: a cluster ball nestles INTO the pocket between its nearest cluster
-          // neighbours (tangent to both, no overlap/gap) — what plain de-overlap can't do (it ejects
-          // from a 2-ball gap). Falls back to de-overlap when nothing's near. Gated on the config-derived
-          // clusterBall flag (placement_config.cluster), never element type.
-          const pocket = sticker.clusterBall
-            ? pocketSeat2D(newX, newZ, selfR,
-                siblings.filter(s => s.clusterBall).map(s => ({ x: s.x, z: s.z, r: (glbXRadiusCache[s.imageUrl] ?? STICKER_SIZE / 4) * (s.scale ?? 1) })))
-            : null;
-          if (pocket) {
-            ({ x: newX, z: newZ } = clampPt(pocket.x, pocket.z));
+          if (sticker.clusterBall) {
+            // Manual faux-ball arrangement: physically seat the ball — on the cake surface (de-overlapped
+            // so it touches but never penetrates) or cradled on ≥3 balls when dropped onto a real pocket.
+            // It never balances on 1–2 balls and never floats. Gated on the config clusterBall flag.
+            const balls = siblings.filter(s => s.clusterBall).map(s => {
+              const sR = (glbXRadiusCache[s.imageUrl] ?? STICKER_SIZE / 4) * (s.scale ?? 1);
+              return { x: s.x, z: s.z, y: topY + (s.yOffset ?? 0) + sR, r: sR };
+            });
+            const seat = manualSeat(newX, newZ, selfR, balls, topY);
+            lastValidPos.current = { x: seat.x, z: seat.z };
+            onMove(sticker.id, { x: seat.x, z: seat.z, yOffset: seat.y - topY - selfR });
           } else {
             for (const sib of siblings) {
               const sibR  = (glbXRadiusCache[sib.imageUrl] ?? STICKER_SIZE / 4) * (sib.scale ?? 1);
@@ -1011,9 +1012,9 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
                 ({ x: newX, z: newZ } = clampPt(newX, newZ));
               }
             }
+            lastValidPos.current = { x: newX, z: newZ };
+            onMove(sticker.id, { x: newX, z: newZ });
           }
-          lastValidPos.current = { x: newX, z: newZ };
-          onMove(sticker.id, { x: newX, z: newZ });
         }
         lastHitRef.current = hit;
       }
