@@ -2082,8 +2082,25 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     setSelectedEl({ type: 'sticker', id });
   }
 
-  function handleGroupMove(groupId, startPositions, delta) {
-    moveGroupStickers(groupId, startPositions, delta);
+  function handleGroupMove(key, startPositions, delta) {
+    // A ball cluster belongs at the rim — rim-lock its drag so it slides AROUND the rim but can't be
+    // dragged off the cake. Clamp the delta so the SEED (first/biggest ball) stays on a ring just
+    // inside the rim; the rest of the clump follows rigidly. (User groups — keyed by groupId, not a
+    // clusterId — are unaffected. Round only; rect is a follow-up.)
+    const members = design.stickers.filter(s => s.clusterId === key);
+    if (members.length) {
+      const seed = [...members].sort((a, b) => a.id - b.id)[0];
+      const start = startPositions[seed.id];
+      const shp = tierShape(design.tiers[seed.tierIndex ?? 0] ?? design.tiers[0]);
+      if (start && shp.kind !== 'rect') {
+        const seedR = (seed.scale ?? 1) * CLUSTER_BASE_R;
+        const ring = Math.max(0, shp.radius - seedR);
+        const nx = start.x + (delta.dx ?? 0), nz = start.z + (delta.dz ?? 0);
+        const rho = Math.hypot(nx, nz) || 1;
+        delta = { ...delta, dx: (nx / rho) * ring - start.x, dz: (nz / rho) * ring - start.z };
+      }
+    }
+    moveGroupStickers(key, startPositions, delta);
   }
 
   // Drag any sticker that's part of a multi-selection → move the whole selection together.
