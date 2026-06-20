@@ -2261,10 +2261,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     });
     return clusterId;
   }
-  function placeCluster(element, hit) {
+  // User-initiated: turn a single placed ball into a packed clump at its current spot. The seed ball
+  // is replaced by the packed set (sharing a fresh clusterId); the cluster card then controls size.
+  function makeCluster(sticker) {
+    const element = elementById.get(sticker.elementId);
+    if (!element) return;
     const clusterId = crypto.randomUUID();
-    clusterInstances(element, hit.zone, hit.tierIndex, hit.x ?? 0, hit.z ?? 0, CLUSTER_DEFAULT_COUNT, clusterId);
-    setElementsOpen(false);
+    removeSticker(sticker.id);
+    clusterInstances(element, sticker.zone, sticker.tierIndex, sticker.x ?? 0, sticker.z ?? 0, CLUSTER_DEFAULT_COUNT, clusterId);
+    setColorOpen(false);
     focusEditor('decoration');
     setMultiSelectMode(false);
     setSelectedStickerIds(new Set());
@@ -2389,8 +2394,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   function handleElementDrop(element, hit) {
     const parts = element.placement_config?.parts;
     if (Array.isArray(parts) && parts.length) { placePattern(element, parts, hit); return; }
-    // Faux-ball cluster: drop a packed clump as ONE cluster card. Config-driven (placement_config.cluster).
-    if (element.placement_config?.cluster) { placeCluster(element, hit); return; }
+    // Cluster-capable elements (placement_config.cluster) place as a single ball; the user turns it
+    // into a packed clump from the popup ("Make cluster"), then controls its size on the cluster card.
     // Density-scatter element (sprinkles): drop a packed batch as ONE scatter card. Config-driven.
     if (element.placement_config?.scatter === true) { placeScatter(element, hit); return; }
 
@@ -3283,6 +3288,19 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           <button key="fold-" style={s.tbIconBtn} onClick={() => updateSticker(el.id, { fold: Math.max(0, Math.round(fa - 5)) })}>−</button>,
           <span key="fold-val" style={{ ...s.tbSizeLabel, minWidth: 28 }}>{Math.round(fa)}°</span>,
           <button key="fold+" style={s.tbIconBtn} onClick={() => updateSticker(el.id, { fold: Math.min(75, Math.round(fa + 5)) })}>+</button>,
+        ] });
+      }
+    }
+
+    // Cluster-capable element (placement_config.cluster): a single placed ball can become a packed
+    // clump. The user opts in here (popup button); the cluster card then controls its size.
+    if (el.type === 'sticker') {
+      const sticker = design.stickers.find(stkr => stkr.id === el.id);
+      const srcEl = sticker && elementById.get(sticker.elementId);
+      if (sticker && !sticker.clusterId && srcEl?.placement_config?.cluster) {
+        groups.push({ key: 'mk-cluster', divider: true, controls: [
+          <button key="mk-cluster" style={{ ...s.tbIconBtn, fontSize: 11, fontWeight: 700 }}
+            onClick={() => makeCluster(sticker)}>Make cluster</button>,
         ] });
       }
     }

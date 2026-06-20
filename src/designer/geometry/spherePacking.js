@@ -59,12 +59,21 @@ export function packClusterOnSurface({ count, radii }) {
 
   for (let i = 1; i < count; i++) {
     const r = radii[i % radii.length];
+    // Grow as a COMPACT 3D mound (balanced horizontal + vertical), not a flat disc: score each
+    // candidate by distance to the current cluster centroid, so the clump fills inward/upward into
+    // pockets rather than only spreading sideways. y >= r keeps it resting on the surface, so the
+    // result is a rounded hemispherical pile.
+    const n = balls.length;
+    const centroid = [
+      balls.reduce((a, b) => a + b.c[0], 0) / n,
+      balls.reduce((a, b) => a + b.c[1], 0) / n,
+      balls.reduce((a, b) => a + b.c[2], 0) / n,
+    ];
     let best = null, bestScore = Infinity;
     const consider = (c) => {
       if (!c || c[1] < r - EPS) return;            // null / below the surface
       if (overlapsAny(c, r) || !touchesAny(c, r)) return;
-      // grounded + compact: prefer low balls, then ones near the anchor
-      const score = c[1] + Math.hypot(c[0], c[2]);
+      const score = dist3(c, centroid);            // tightest to the centroid wins → compact mound
       if (score < bestScore) { bestScore = score; best = c; }
     };
     // (a) resting on the surface (centre at y=r), tangent to a placed ball
