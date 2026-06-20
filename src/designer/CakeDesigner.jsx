@@ -1996,6 +1996,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // hug vs stand) and select it, which opens its card with the placement chooser. Fully
   // config-driven; works for any element whose allowed_zones has more than one surface.
   function tapPlaceElement(element) {
+    // Cluster elements are DRAG-to-place: you drop the ball exactly where you want it — top OR side —
+    // so a tap must NOT drop one on top by default. The panel hint already says "Drag onto cake to place".
+    if (element.placement_config?.cluster) return;
     const zones = element.allowed_zones ?? [];
     // Prefer the top surface; a hero decoration belongs on the cake's actual top (the LAST/
     // topmost tier), not tier 0 (which is hidden under upper tiers on a multi-tier cake).
