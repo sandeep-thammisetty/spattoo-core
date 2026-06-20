@@ -203,21 +203,28 @@ export function circleIntersect(x0, z0, r0, x1, z1, r1) {
 // 1–2 nearest neighbours toward the drop point (px,pz), or null when none is near enough to snap (so
 // the caller keeps free placement). `neighbors` = [{x,z,r}]. `band` = how close (× r) counts as "near".
 export function pocketSeat2D(px, pz, r, neighbors, band = 0.6) {
+  const ns = neighbors ?? [];
   const touch = nr => 2 * Math.sqrt(r * nr);                       // in-plane tangency distance
-  const near = (neighbors ?? [])
+  // A seat is valid only if it PENETRATES nothing — in-plane dist ≥ tangency for EVERY neighbour.
+  const ok = (x, z) => ns.every(n => Math.hypot(x - n.x, z - n.z) >= touch(n.r) - 1e-3);
+  const near = ns
     .map(n => ({ n, t: touch(n.r), d: Math.hypot(px - n.x, pz - n.z) }))
     .filter(o => o.d < o.t + band * r)                             // within a snap band of contact
     .sort((a, b) => Math.abs(a.d - a.t) - Math.abs(b.d - b.t));    // closest to its tangency ring first
   if (!near.length) return null;
-  if (near.length >= 2) {
-    const [A, B] = near;
-    const sol = circleIntersect(A.n.x, A.n.z, A.t, B.n.x, B.n.z, B.t);
-    if (sol) {                                                     // nestle in the pocket: side nearest the drop
-      const p1 = { x: sol.x1, z: sol.z1 }, p2 = { x: sol.x2, z: sol.z2 };
-      return Math.hypot(p1.x - px, p1.z - pz) <= Math.hypot(p2.x - px, p2.z - pz) ? p1 : p2;
+  // Pocket: tangent to a close PAIR (nearest pairs first); take the first solution that penetrates nothing.
+  for (let i = 0; i < near.length; i++) {
+    for (let j = i + 1; j < near.length; j++) {
+      const sol = circleIntersect(near[i].n.x, near[i].n.z, near[i].t, near[j].n.x, near[j].n.z, near[j].t);
+      if (!sol) continue;
+      const cands = [{ x: sol.x1, z: sol.z1 }, { x: sol.x2, z: sol.z2 }]
+        .sort((a, b) => Math.hypot(a.x - px, a.z - pz) - Math.hypot(b.x - px, b.z - pz));  // nearer the drop first
+      for (const c of cands) if (ok(c.x, c.z)) return c;
     }
   }
-  const { n, t } = near[0];                                        // one neighbour: rest tangent toward the drop
+  // No clear pocket: rest tangent to the single nearest, toward the drop — only if it penetrates nothing.
+  const { n, t } = near[0];
   const ux = px - n.x, uz = pz - n.z, m = Math.hypot(ux, uz) || 1;
-  return { x: n.x + (ux / m) * t, z: n.z + (uz / m) * t };
+  const one = { x: n.x + (ux / m) * t, z: n.z + (uz / m) * t };
+  return ok(one.x, one.z) ? one : null;                            // else null → caller keeps free/de-overlap
 }

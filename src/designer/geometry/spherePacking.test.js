@@ -165,6 +165,18 @@ describe('pocketSeat2D — manual drag snaps a ball tangent into a pocket', () =
     expect(p.z).toBeGreaterThan(0);                     // the solution on the drop side
   });
 
+  it('never returns a seat that penetrates a THIRD ball', () => {
+    const r = 0.2;
+    // Three mutually-touching balls in a tight triangle; dragging a 4th into the middle has no room.
+    const tri = [
+      { x: 0, z: 0, r: 0.2 },
+      { x: 0.4, z: 0, r: 0.2 },
+      { x: 0.2, z: 0.346, r: 0.2 },
+    ];
+    const p = pocketSeat2D(0.2, 0.12, r, tri);   // drop in the crowded centre
+    if (p) for (const n of tri) expect(dist(p.x, p.z, n.x, n.z)).toBeGreaterThanOrEqual(2 * Math.sqrt(r * n.r) - 2e-3);
+  });
+
   it('circleIntersect returns null for non-meeting circles', () => {
     expect(circleIntersect(0, 0, 1, 5, 0, 1)).toBeNull();   // too far
     expect(circleIntersect(0, 0, 1, 0, 0, 0.1)).toBeNull(); // one inside the other
