@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { apollo3, packCluster } from './spherePacking.js';
+import { apollo3, packCluster, clusterRadii } from './spherePacking.js';
 
 const dist3 = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 // A flat top with no reachable rim (huge R) — exercises the pure packing invariants.
@@ -17,6 +17,30 @@ describe('apollo3 — tangent to three spheres', () => {
 
   it('returns null for collinear centres', () => {
     expect(apollo3([0, 0, 0], 1, [2, 0, 0], 1, [4, 0, 0], 1, 1)).toBeNull();
+  });
+});
+
+describe('clusterRadii — size distribution (1 big, few mid, mostly small)', () => {
+  const sizes = [1.6, 1.1, 0.8, 0.5];
+
+  it('has the right length, descending, exactly one largest', () => {
+    const seq = clusterRadii(20, sizes);
+    expect(seq).toHaveLength(20);
+    expect(seq.filter(r => r === 1.6)).toHaveLength(1);                 // only ONE biggest
+    for (let i = 1; i < seq.length; i++) expect(seq[i]).toBeLessThanOrEqual(seq[i - 1]);  // descending
+  });
+
+  it('roughly 11% second, 35% third, the rest smallest', () => {
+    const seq = clusterRadii(20, sizes);
+    expect(seq.filter(r => r === 1.1).length).toBe(Math.round(20 * 0.11));   // 2
+    expect(seq.filter(r => r === 0.8).length).toBe(Math.round(20 * 0.35));   // 7
+    expect(seq.filter(r => r === 0.5).length).toBe(20 - 1 - 2 - 7);          // 10 — most are small
+  });
+
+  it('safe for tiny counts and short tier lists', () => {
+    expect(clusterRadii(1, sizes)).toEqual([1.6]);
+    expect(clusterRadii(0, sizes)).toEqual([]);
+    expect(clusterRadii(5, [1.0])).toEqual([1, 1, 1, 1, 1]);
   });
 });
 

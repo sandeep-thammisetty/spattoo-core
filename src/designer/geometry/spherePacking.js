@@ -35,6 +35,24 @@ export function apollo3(P1, rP1, P2, rP2, P3, rP3, rG) {
 
 const dist3 = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 
+// Per-ball radii for a cluster of `count`, following the size MIX (rough product rule): exactly ONE
+// largest (the seed), ~11% second-largest, ~35% third, the rest smallest. Returned DESCENDING so the
+// packer places big balls FIRST — they take the base/surface — and the small ones last (pockets / on
+// top). `sizes` is the tier list [largest, 2nd, 3rd, small] (descending); shorter lists reuse the last.
+export const CLUSTER_SECOND_FRAC = 0.11;
+export const CLUSTER_THIRD_FRAC  = 0.35;
+export function clusterRadii(count, sizes) {
+  if (!count || count < 1 || !sizes?.length) return [];
+  const t = i => sizes[Math.min(i, sizes.length - 1)];
+  const seq = [t(0)];                                   // exactly one largest (seed)
+  const n2 = Math.round(count * CLUSTER_SECOND_FRAC);
+  const n3 = Math.round(count * CLUSTER_THIRD_FRAC);
+  for (let i = 0; i < n2 && seq.length < count; i++) seq.push(t(1));
+  for (let i = 0; i < n3 && seq.length < count; i++) seq.push(t(2));
+  while (seq.length < count) seq.push(t(3));            // the rest: smallest
+  return seq.slice(0, count);
+}
+
 // Greedy 3D pack of mixed-size balls into ONE clump that CLINGS TO THE CAKE — most balls rest on the
 // cake surface (top / rim / side wall), a few nestle in pockets ON TOP of supporting balls — matching
 // real gold-ball clusters (Phase-B reqs #3–#6). The two physical rules:

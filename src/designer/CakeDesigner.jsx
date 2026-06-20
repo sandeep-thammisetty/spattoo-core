@@ -9,7 +9,7 @@ import TopperPreview from './canvas/TopperPreview.jsx';
 import { CakeSpinner, CakeSpinnerFill, DecorLoadingOverlay } from './canvas/CakeSpinner.jsx';
 import { isSinglePerSlot, placementSlots, isDynamicHug, facingOffsetRadians, scaleRangeOf, DEFAULT_FOLD_DEG, edgeSeatSeed } from './placement.js';
 import { tierShape } from './geometry/surface.js';
-import { packCluster } from './geometry/spherePacking.js';
+import { packCluster, clusterRadii } from './geometry/spherePacking.js';
 import { SHELL_HEIGHT_FRAC, getShellExtents, getFestoonExtents, festoonSig } from './canvas/pipingMetrics.js';
 import { useCakeDesign } from './hooks/useCakeDesign';
 import FrostingTypePicker from './controls/FrostingPicker.jsx';
@@ -2242,7 +2242,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   const CLUSTER_DEFAULT_COUNT = 9;
   function clusterConfigOf(element) {
     const c = element.placement_config?.cluster ?? {};
-    const sizes = (Array.isArray(c.sizes) && c.sizes.length) ? c.sizes : [1.5, 1.0, 0.6];
+    // Size TIERS, descending: [largest, 2nd, 3rd, small]. clusterRadii turns these into the per-ball
+    // mix (1 biggest, ~11% 2nd, ~35% 3rd, rest small).
+    const sizes = (Array.isArray(c.sizes) && c.sizes.length) ? c.sizes : [1.6, 1.1, 0.8, 0.5];
     const palette = (Array.isArray(c.palette) && c.palette.length) ? c.palette : [element.default_color ?? '#D4AF37'];
     return { min: c.min ?? 3, max: c.max ?? 30, sizes, palette };
   }
@@ -2255,7 +2257,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     // The CUSTOMER controls the palette (config's is only the default seed). On re-pack we pass the
     // cluster's current palette so the chosen colours survive a size change.
     const palette = (paletteOverride && paletteOverride.length) ? paletteOverride : cfgPalette;
-    const radii = sizes.map(s => s * CLUSTER_BASE_R);                  // world radii
+    // Per-ball radii following the size mix (1 big, ~11% 2nd, ~35% 3rd, rest small), descending so the
+    // packer puts the big ones on the base and the small ones on top.
+    const radii = clusterRadii(count, sizes.map(s => s * CLUSTER_BASE_R));   // world radii, length = count
     // Cake geometry in the render's world-Y frame (same convention as seatOnSlot, so yOffset lines up).
     const ti = tierIndex ?? 0;
     let baseY = 0.1;
