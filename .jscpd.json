@@ -1,0 +1,10 @@
+{
+  "//": "Copy-paste detector. REPORT-ONLY for now: high threshold + NOT in `npm run verify`, so it never blocks a commit yet. After the faux-ball removal gives a clean baseline, lower `threshold` (e.g. 0-2) and add `check:dup` to `verify` to turn it into a hard gate. Wrap a deliberate, reviewed clone in `// jscpd:ignore-start` … `// jscpd:ignore-end`.",
+  "threshold": 100,
+  "minTokens": 50,
+  "minLines": 8,
+  "absolute": true,
+  "gitignore": true,
+  "ignore": ["**/*.test.js", "**/dist/**", "**/.pw/**", "**/node_modules/**"],
+  "reporters": ["console"]
+}

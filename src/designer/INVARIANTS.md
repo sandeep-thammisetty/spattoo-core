@@ -43,6 +43,15 @@ All placed decor — scattered, picks, image‑topper, faux‑ball, topper, top&
 When asked to do something "like the piping popup," **open the piping code and reuse it** — never
 approximate from memory or build a parallel version.
 
+This applies to shared **logic**, not just React components. Before writing new placement / seating /
+geometry / de-overlap / hit-test logic, **grep for an existing helper that already does it**
+(`placement.js`, `geometry/surface.js`, the hooks) and extend that ONE helper. A rule used in two
+places lives in a single pure function both call — never a second copy. Cautionary tale: the
+"nudge a seat off a coincident sibling" rule was pasted into **four** call sites (`addSticker` stand /
+scatter-top / scatter-side / edge + `duplicateSticker`) with subtly different behaviour, until it was
+unified into `deOverlapSeat`. Likewise `edgeSeatSeed` is the single front-edge seat used by both the
+add and chooser-move paths. Duplicated logic silently drifts — treat a copy-paste as a defect.
+
 ### 3a. ALL popups are RIGHT‑SIDE panels — never centre‑screen modals
 Every chooser/editor/placement popup is a right‑side panel using `s.editPopup` (`position:absolute;
 right:10; top:12`), exactly like the piping popup and the decoration edit stack. **Never** build a
@@ -88,6 +97,8 @@ through its right‑side popup (#3a). It MUST NOT branch on element type, slug, 
 - [ ] No branch on zone (`rim`/`board`/…) to decide picker interaction, clickability, or which popup
       opens — the panel treats every element identically (#6).
 - [ ] Reused the existing shared component rather than a new parallel one.
+- [ ] No copy-pasted logic: grepped for an existing helper first; a rule used in 2+ places lives in
+      ONE pure function both call (e.g. `deOverlapSeat`, `edgeSeatSeed`) — not a second copy.
 - [ ] All element kinds still behave: topper, top&side, scattered, picks, image‑topper, piping.
 - [ ] **Verified visually** in the real app, not by reading code — see below.
 
