@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { apollo3, packCluster, clusterRadii, CLUSTER_SECOND_FRAC, CLUSTER_THIRD_FRAC } from './spherePacking.js';
+import { apollo3, packCluster, clusterRadii, CLUSTER_SECOND_FRAC, CLUSTER_THIRD_FRAC, pocketSeat2D, circleIntersect } from './spherePacking.js';
 
 const dist3 = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 // A flat top with no reachable rim (huge R) — exercises the pure packing invariants.
@@ -136,5 +136,37 @@ describe('packCluster — supported & draping on a real cake (#5/#6)', () => {
 
   it('drapes: at least one ball spills past the rim or below the top', () => {
     expect(balls.some(b => Math.hypot(b.x, b.z) > cake.R || b.y < cake.topY)).toBe(true);
+  });
+});
+
+describe('pocketSeat2D — manual drag snaps a ball tangent into a pocket', () => {
+  const dist = (ax, az, bx, bz) => Math.hypot(ax - bx, az - bz);
+
+  it('returns null when no neighbour is near the drop', () => {
+    expect(pocketSeat2D(5, 5, 0.2, [{ x: 0, z: 0, r: 0.2 }])).toBeNull();
+    expect(pocketSeat2D(0, 0, 0.2, [])).toBeNull();
+  });
+
+  it('one near neighbour → rests tangent to it toward the drop (touch = 2√(r·rn))', () => {
+    const r = 0.2, n = { x: 0, z: 0, r: 0.2 };
+    const p = pocketSeat2D(0.35, 0, r, [n]);            // drop just inside contact, to the +x side
+    expect(p).not.toBeNull();
+    expect(dist(p.x, p.z, n.x, n.z)).toBeCloseTo(2 * Math.sqrt(r * n.r), 6);  // exactly tangent
+    expect(p.x).toBeGreaterThan(0);                     // toward the drop
+  });
+
+  it('two near neighbours → nestles tangent to BOTH (the pocket)', () => {
+    const r = 0.2;
+    const a = { x: -0.2, z: 0, r: 0.2 }, b = { x: 0.2, z: 0, r: 0.2 };  // two balls with a gap between
+    const p = pocketSeat2D(0, 0.1, r, [a, b]);          // drop in the gap, +z side
+    expect(p).not.toBeNull();
+    expect(dist(p.x, p.z, a.x, a.z)).toBeCloseTo(2 * Math.sqrt(r * a.r), 5);  // tangent to A
+    expect(dist(p.x, p.z, b.x, b.z)).toBeCloseTo(2 * Math.sqrt(r * b.r), 5);  // tangent to B
+    expect(p.z).toBeGreaterThan(0);                     // the solution on the drop side
+  });
+
+  it('circleIntersect returns null for non-meeting circles', () => {
+    expect(circleIntersect(0, 0, 1, 5, 0, 1)).toBeNull();   // too far
+    expect(circleIntersect(0, 0, 1, 0, 0, 0.1)).toBeNull(); // one inside the other
   });
 });

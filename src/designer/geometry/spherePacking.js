@@ -182,3 +182,42 @@ export function packCluster({ count, radii, cake }) {
   }
   return balls.map(b => ({ x: b.c[0], y: b.c[1], z: b.c[2], r: b.r }));
 }
+
+// Two circles (centre x0,z0 r0 / x1,z1 r1) → their two intersection points, or null if they don't meet
+// (too far apart, one inside the other, or concentric). Used for in-plane pocket seating.
+export function circleIntersect(x0, z0, r0, x1, z1, r1) {
+  const dx = x1 - x0, dz = z1 - z0, d = Math.hypot(dx, dz);
+  if (d < 1e-9 || d > r0 + r1 || d < Math.abs(r0 - r1)) return null;
+  const a = (r0 * r0 - r1 * r1 + d * d) / (2 * d);
+  const h2 = r0 * r0 - a * a;
+  if (h2 < 0) return null;
+  const h = Math.sqrt(h2);
+  const mx = x0 + (a * dx) / d, mz = z0 + (a * dz) / d;
+  const ox = -(dz / d) * h, oz = (dx / d) * h;
+  return { x1: mx + ox, z1: mz + oz, x2: mx - ox, z2: mz - oz };
+}
+
+// In-plane (x/z) POCKET seat for a ball of radius r dropped near others, all resting on the same flat
+// surface (each centre at surfaceY + its own radius). Two such balls of radii a,b touch when their
+// in-plane distance = 2·√(a·b) (3D tangency at differing heights). Returns {x,z} nestled tangent to the
+// 1–2 nearest neighbours toward the drop point (px,pz), or null when none is near enough to snap (so
+// the caller keeps free placement). `neighbors` = [{x,z,r}]. `band` = how close (× r) counts as "near".
+export function pocketSeat2D(px, pz, r, neighbors, band = 0.6) {
+  const touch = nr => 2 * Math.sqrt(r * nr);                       // in-plane tangency distance
+  const near = (neighbors ?? [])
+    .map(n => ({ n, t: touch(n.r), d: Math.hypot(px - n.x, pz - n.z) }))
+    .filter(o => o.d < o.t + band * r)                             // within a snap band of contact
+    .sort((a, b) => Math.abs(a.d - a.t) - Math.abs(b.d - b.t));    // closest to its tangency ring first
+  if (!near.length) return null;
+  if (near.length >= 2) {
+    const [A, B] = near;
+    const sol = circleIntersect(A.n.x, A.n.z, A.t, B.n.x, B.n.z, B.t);
+    if (sol) {                                                     // nestle in the pocket: side nearest the drop
+      const p1 = { x: sol.x1, z: sol.z1 }, p2 = { x: sol.x2, z: sol.z2 };
+      return Math.hypot(p1.x - px, p1.z - pz) <= Math.hypot(p2.x - px, p2.z - pz) ? p1 : p2;
+    }
+  }
+  const { n, t } = near[0];                                        // one neighbour: rest tangent toward the drop
+  const ux = px - n.x, uz = pz - n.z, m = Math.hypot(ux, uz) || 1;
+  return { x: n.x + (ux / m) * t, z: n.z + (uz / m) * t };
+}

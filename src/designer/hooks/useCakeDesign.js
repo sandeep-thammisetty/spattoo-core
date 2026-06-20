@@ -327,6 +327,9 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
           // flag rides on each instance so the card can collapse them. Config-driven
           // (placement_config.scatter).
           scatter:       element.placement_config?.scatter === true,
+          // Cluster-capable ball (placement_config.cluster): a single such ball pocket-snaps tangent to
+          // its neighbours when dragged, so the customer can hand-build a cluster (manual mode).
+          clusterBall:   !!element.placement_config?.cluster,
           // Side seating: default flush (true hug, centred on the wall); proud = back-on-wall so a
           // deep model stands off the wall (toppers). Config-driven; applied in the side bend path.
           // A cluster ball is a sphere: on the side it must rest PROUD on the wall (back-on-wall), never

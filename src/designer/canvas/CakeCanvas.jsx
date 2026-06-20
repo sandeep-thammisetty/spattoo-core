@@ -17,6 +17,7 @@ import {
 import { pointerRay, cylinderHit, planeHit, buildRay } from '../utils/raycasting.js';
 import { getFondantNormalMap, applyBoxUVs } from '../shared/textures/fondantTexture.js';
 import { tierShape, topClamp, topClampInset, topContains, boxHit, nearestU, rectSidePlacement, perimeter, snapToRim } from '../geometry/surface.js';
+import { pocketSeat2D } from '../geometry/spherePacking.js';
 import { hugScale, isDynamicHug, wallClampY, DEFAULT_HUG_FILL, DEFAULT_FOLD_DEG, DEFAULT_SPINE } from '../placement.js';
 import { recolorImageData } from '../shared/color/imageRecolor.js';
 import { applyGradient } from '../shared/color/gradientMaterial.js';
@@ -987,16 +988,28 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
           const clampPt = (x, z) => isEdgeMode ? snapToRim(shp, x, z) : topClampInset(shp, x, z, edgeMargin);
           ({ x: newX, z: newZ } = clampPt(newX, newZ));
           const siblings = allStickers.filter(s => s.id !== sticker.id && s.zone === sticker.zone && s.tierIndex === sticker.tierIndex);
-          for (const sib of siblings) {
-            const selfR = (glbXRadiusCache[sticker.imageUrl] ?? STICKER_SIZE / 4) * (sticker.scale ?? 1);
-            const sibR  = (glbXRadiusCache[sib.imageUrl]    ?? STICKER_SIZE / 4) * (sib.scale ?? 1);
-            const minDist = selfR + sibR;
-            const ex = newX - sib.x, ez = newZ - sib.z;
-            const dist = Math.sqrt(ex * ex + ez * ez);
-            if (dist < minDist && dist > 0.001) {
-              newX = sib.x + ex * (minDist / dist);
-              newZ = sib.z + ez * (minDist / dist);
-              ({ x: newX, z: newZ } = clampPt(newX, newZ));
+          const selfR = (glbXRadiusCache[sticker.imageUrl] ?? STICKER_SIZE / 4) * (sticker.scale ?? 1);
+          // Manual cluster building: a cluster ball nestles INTO the pocket between its nearest cluster
+          // neighbours (tangent to both, no overlap/gap) — what plain de-overlap can't do (it ejects
+          // from a 2-ball gap). Falls back to de-overlap when nothing's near. Gated on the config-derived
+          // clusterBall flag (placement_config.cluster), never element type.
+          const pocket = sticker.clusterBall
+            ? pocketSeat2D(newX, newZ, selfR,
+                siblings.filter(s => s.clusterBall).map(s => ({ x: s.x, z: s.z, r: (glbXRadiusCache[s.imageUrl] ?? STICKER_SIZE / 4) * (s.scale ?? 1) })))
+            : null;
+          if (pocket) {
+            ({ x: newX, z: newZ } = clampPt(pocket.x, pocket.z));
+          } else {
+            for (const sib of siblings) {
+              const sibR  = (glbXRadiusCache[sib.imageUrl] ?? STICKER_SIZE / 4) * (sib.scale ?? 1);
+              const minDist = selfR + sibR;
+              const ex = newX - sib.x, ez = newZ - sib.z;
+              const dist = Math.sqrt(ex * ex + ez * ez);
+              if (dist < minDist && dist > 0.001) {
+                newX = sib.x + ex * (minDist / dist);
+                newZ = sib.z + ez * (minDist / dist);
+                ({ x: newX, z: newZ } = clampPt(newX, newZ));
+              }
             }
           }
           lastValidPos.current = { x: newX, z: newZ };
