@@ -395,8 +395,10 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
           // GLB material finish, config-driven (placement_config.roughness/metalness). null = keep the
           // GLB's own baked material. Lets one sphere read as metallic (low roughness / high metalness)
           // or matte (high roughness / 0 metalness) from config — applied on the shared art path.
-          roughness:     element.placement_config?.roughness ?? null,
-          metalness:     element.placement_config?.metalness ?? null,
+          // `extra` wins so a customer's finish choice survives a re-pack (clusters pass it through,
+          // like the palette), the same precedence every field above uses.
+          roughness:     extra.roughness ?? element.placement_config?.roughness ?? null,
+          metalness:     extra.metalness ?? element.placement_config?.metalness ?? null,
           allowedActions: {
             resize:    element.allowed_actions?.resize    ?? true,
             duplicate: element.allowed_actions?.duplicate ?? true,

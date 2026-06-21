@@ -10,6 +10,7 @@ import { CakeSpinner, CakeSpinnerFill, DecorLoadingOverlay } from './canvas/Cake
 import { isSinglePerSlot, placementSlots, isDynamicHug, facingOffsetRadians, scaleRangeOf, DEFAULT_FOLD_DEG, edgeSeatSeed } from './placement.js';
 import { tierShape } from './geometry/surface.js';
 import { packCluster, clusterRadii, manualSeat } from './geometry/spherePacking.js';
+import { finishToMaterial, finishOf } from './geometry/finish.js';
 import { SHELL_HEIGHT_FRAC, getShellExtents, getFestoonExtents, festoonSig } from './canvas/pipingMetrics.js';
 import { useCakeDesign } from './hooks/useCakeDesign';
 import FrostingTypePicker from './controls/FrostingPicker.jsx';
@@ -2292,7 +2293,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // side. EVERY ball is a top-surface `stand` sticker positioned by absolute x/z (may pass the rim) +
   // yOffset (packed height − rest seat; negative = below the top, on the side) — the zone the seed came
   // from doesn't matter, the balls are placed absolutely.
-  function clusterInstances(element, tierIndex, seedCenter, count, clusterId, paletteOverride) {
+  function clusterInstances(element, tierIndex, seedCenter, count, clusterId, paletteOverride, finishOverride) {
     const { sizes, palette: cfgPalette } = clusterConfigOf(element);
     // The CUSTOMER controls the palette (config's is only the default seed). On re-pack we pass the
     // cluster's current palette so the chosen colours survive a size change.
@@ -2316,7 +2317,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       addSticker(element, ZONES.TOP_SURFACE, tierIndex, 'stand',
         { x: ball.x, z: ball.z },
         { id: baseId + i, scale: ball.r / CLUSTER_BASE_R, exact: true,
-          yOffset: ball.y - topY - ball.r, clusterId, color: palette[i % palette.length] });
+          yOffset: ball.y - topY - ball.r, clusterId, color: palette[i % palette.length],
+          // Preserve the customer's finish across a re-pack (null → addSticker falls back to config).
+          roughness: finishOverride?.roughness ?? null, metalness: finishOverride?.metalness ?? null });
     });
     return clusterId;
   }
@@ -2347,8 +2350,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     const clusterId = crypto.randomUUID();
     const seedR = (clusterConfigOf(element).sizes[0] ?? 1.6) * CLUSTER_BASE_R;
     const seedCenter = ballSeedCenter(sticker, seedR);
+    const finish = (sticker.roughness == null && sticker.metalness == null)
+      ? null : { roughness: sticker.roughness ?? null, metalness: sticker.metalness ?? null };
     removeSticker(sticker.id);
-    clusterInstances(element, sticker.tierIndex, seedCenter, CLUSTER_DEFAULT_COUNT, clusterId);
+    clusterInstances(element, sticker.tierIndex, seedCenter, CLUSTER_DEFAULT_COUNT, clusterId, null, finish);
     setColorOpen(false);
     focusEditor('decoration');
     setMultiSelectMode(false);
@@ -2397,6 +2402,31 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     design.stickers.filter(s => s.clusterId === clusterId).sort((a, b) => a.id - b.id)
       .forEach((s, i) => updateSticker(s.id, { color: palette[i % palette.length] }));
   }
+  // The cluster's CURRENT finish = the material override its balls share (every member carries the
+  // same roughness/metalness). Returned so a re-pack can reapply it; null = config-default finish.
+  function clusterFinishOf(clusterId) {
+    const s = design.stickers.find(st => st.clusterId === clusterId);
+    if (!s || (s.roughness == null && s.metalness == null)) return null;
+    return { roughness: s.roughness ?? null, metalness: s.metalness ?? null };
+  }
+  // Set the finish (one metallic→matte slider, finishToMaterial) on every ball of a cluster.
+  function setClusterFinish(clusterId, mat) {
+    design.stickers.filter(s => s.clusterId === clusterId)
+      .forEach(s => updateSticker(s.id, mat));
+  }
+  // ONE Finish slider — metallic (left, the default) ↔ matte (right). Shared by the cluster card and
+  // a single ball so the metallic↔matte mapping (finish.js) renders identically in both. Reads the
+  // slider position from the stored metalness; onPick gets the derived { roughness, metalness }.
+  function finishSliderControls(metalness, onPick) {
+    const t = finishOf(metalness);
+    return [
+      <span key="fin-m" style={{ fontSize: 10, color: '#8a7a80', fontFamily: "'Quicksand',sans-serif" }}>Metallic</span>,
+      <input key="fin-r" type="range" min={0} max={1} step={0.01} value={t}
+        onChange={e => onPick(finishToMaterial(parseFloat(e.target.value)))}
+        style={{ flex: 1, minWidth: 60, accentColor: '#1a1a1a' }} />,
+      <span key="fin-x" style={{ fontSize: 10, color: '#8a7a80', fontFamily: "'Quicksand',sans-serif" }}>Matte</span>,
+    ];
+  }
   // Resize: re-pack from the seed ball's anchor with a new count, KEEPING the customer's palette. A
   // cluster is packed (not hand-dragged), so regenerating is correct — unlike scatter (dragged seats).
   function setClusterSize(clusterId, count) {
@@ -2406,12 +2436,13 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     const el = elementById.get(ref.elementId);
     if (!el) return;
     const palette = clusterPaletteOf(clusterId);                // preserve the customer's colours
+    const finish = clusterFinishOf(clusterId);                  // …and their metallic/matte finish
     const seed = [...members].sort((a, b) => a.id - b.id)[0];   // first-placed = packer seed = cluster centre
     // Reconstruct the seed's world centre from its sticker (top-path: x/z absolute, y = topY+yOffset+r).
     const { topY } = tierGeom(seed.tierIndex);
     const seedCenter = [seed.x ?? 0, topY + (seed.yOffset ?? 0) + (seed.scale ?? 1) * CLUSTER_BASE_R, seed.z ?? 0];
     members.forEach(s => removeSticker(s.id));
-    clusterInstances(el, seed.tierIndex, seedCenter, count, clusterId, palette);
+    clusterInstances(el, seed.tierIndex, seedCenter, count, clusterId, palette, finish);
   }
 
   // Top vs side are INDEPENDENT scatter sets of the same element (sprinkles on both at once). Group
@@ -3179,6 +3210,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               style={{ ...swatch, width: 26, fontSize: 16, color: '#3D5A44', background: '#F2F7F3', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>+</button>
           </div>
         </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+          <span style={s.editPanelLabel}>Finish</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {finishSliderControls(members[0]?.metalness, mat => setClusterFinish(card.clusterId, mat))}
+          </div>
+        </div>
         <button style={{ ...s.iconBtn, width: '100%', borderRadius: 8, fontSize: 11, fontWeight: 700, color: '#e53935', background: '#fff0f0', border: '1.5px solid #f5c0c0' }}
           onClick={() => { members.forEach(m => removeSticker(m.id)); clearAllSelections(); }}>Remove</button>
       </div>
@@ -3533,6 +3570,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       const sticker = design.stickers.find(stkr => stkr.id === el.id);
       const srcEl = sticker && elementById.get(sticker.elementId);
       if (sticker && !sticker.clusterId && srcEl?.placement_config?.cluster) {
+        // Finish: same metallic→matte slider as the cluster card, on the single ball (config-gated on
+        // cluster capability, never element type). Writes the derived material straight to the instance.
+        groups.push({ key: 'finish', divider: true, panelLabel: 'Finish', controls:
+          finishSliderControls(sticker.metalness, mat => updateSticker(sticker.id, mat)) });
         groups.push({ key: 'cluster-toggle', divider: true, controls: [
           <button key="cl-on" style={{ ...s.toolbarBtn, width: '100%', background: '#1a1a1a', color: '#fff', padding: '8px 10px', fontSize: 12 }} onClick={() => makeCluster(sticker)}>Create cluster</button>,
         ] });
