@@ -200,12 +200,18 @@ export function getWhippedFoamNormalMap(size = 256, strength = 0.9) {
 // project and break the silhouette (a normal map cannot). Only side vertices (near-horizontal
 // normal) move, radially; caps stay flat. Normals are recomputed so shading is real, not faked.
 // `relief` is in WORLD units (e.g. 0.04 ≈ 4% of a radius-1 cake, matching the shallow Meshy ripple).
+// Build the cream-wave height field with the canonical defaults. Shared so the geometry displacement
+// AND the surface sampler (for seating decor on the wavy wall) read the SAME field — no drift.
+export function creamWaveFieldFor(opts = {}) {
+  return makeCreamWaveField({
+    ridges: 6, lobes: 2, waveAmp: 0.35, noiseAmt: 0.12, ribbonW: 0.05, driftAmt: 0.08, bandPhase: 0.9 * Math.PI, falloff: 0.4,
+    ...opts,
+  });
+}
+
 // The cylinder must be well tessellated (high radial + height segments) to resolve the waves.
 export function displaceCreamWaveCylinder(geometry, { relief = 0.03, ...fieldOpts } = {}) {
-  const field = makeCreamWaveField({
-    ridges: 6, lobes: 2, waveAmp: 0.35, noiseAmt: 0.12, ribbonW: 0.05, driftAmt: 0.08, bandPhase: 0.9 * Math.PI, falloff: 0.4,
-    ...fieldOpts,
-  });
+  const field = creamWaveFieldFor(fieldOpts);
   geometry.computeBoundingBox();
   const bb = geometry.boundingBox;
   const yMin = bb.min.y, yH = (bb.max.y - bb.min.y) || 1;

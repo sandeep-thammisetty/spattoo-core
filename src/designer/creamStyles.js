@@ -20,7 +20,7 @@
 export const CREAM_STYLES = {
   smooth: { label: 'Smooth', wall: 'smooth', params: [] },
   wave: {
-    label: 'Cream Wave', wall: 'wave', reliefKey: 'relief',
+    label: 'Cream Wave', wall: 'wave',
     params: [
       { key: 'relief',  label: 'Depth',      min: 0,    max: 0.12, step: 0.005, default: 0.06, user: true },
       { key: 'lobes',   label: 'Waviness',   min: 1,    max: 6,    step: 1,     default: 2,    user: true },
@@ -31,7 +31,7 @@ export const CREAM_STYLES = {
     ],
   },
   swirl: {
-    label: 'Swirl', wall: 'swirl', reliefKey: 'amp',
+    label: 'Swirl', wall: 'swirl',
     params: [
       { key: 'amp',   label: 'Depth',  min: 0, max: 0.1, step: 0.005, default: 0.045, user: true },
       { key: 'twist', label: 'Twist',  min: 0, max: 8,   step: 0.5,   default: 3.0,   user: true },
@@ -60,10 +60,9 @@ export const styleDef = (style) => CREAM_STYLES[style] ?? CREAM_STYLES[DEFAULT_S
 export const frostingStyleTypes = () => STYLE_ORDER.map(value => ({ value, label: styleDef(value).label }));
 
 // Overlay DB-authored textures (cake_textures) onto the in-code SEED. Each row: { key, label,
-// algorithm, config:{ params, surfaceMap, reliefKey } }. Styles absent from the DB keep their seed
-// (so the designer still works offline / before the table is seeded). `algorithm` is the wall
-// strategy key. Each field falls back to the seed when the DB row omits it, so an older row that
-// predates a field (e.g. `reliefKey`) still renders correctly until it is re-saved.
+// algorithm, config:{ params, surfaceMap } }. Styles absent from the DB keep their seed (so the
+// designer still works offline / before the table is seeded). `algorithm` is the wall strategy key.
+// Each field falls back to the seed when the DB row omits it, so an older/partial row still renders.
 export function applyTextureConfig(rows) {
   if (!Array.isArray(rows)) return;
   for (const row of rows) {
@@ -73,7 +72,6 @@ export function applyTextureConfig(rows) {
       label: row.label ?? seed?.label ?? row.key,
       wall: row.algorithm ?? seed?.wall ?? row.key,
       surfaceMap: row.config?.surfaceMap ?? seed?.surfaceMap,   // normal-map finishes carry this in config
-      reliefKey: row.config?.reliefKey ?? seed?.reliefKey,      // param driving radial relief (geometry walls)
       params: Array.isArray(row.config?.params) ? row.config.params : (seed?.params ?? []),
     };
     if (!STYLE_ORDER.includes(row.key)) STYLE_ORDER.push(row.key);
@@ -88,16 +86,4 @@ export function resolveStyleParams(style, overrides) {
   const out = {};
   for (const p of styleParamSchema(style)) out[p.key] = overrides?.[p.key] ?? p.default;
   return out;
-}
-
-// Max RADIAL relief (world units) a style's wall pushes out — i.e. how far placed side elements must
-// seat OUT to clear it. Config-driven: a geometry wall names the param that drives its depth via
-// `reliefKey` (wave→'relief', swirl→'amp'); the displacement fields are normalised to [0,1] and scaled
-// by radius (creamWall.js), so the crest height is exactly that param × radius. Smooth / normal-map
-// (surfaceMap) styles don't displace the silhouette → 0. No style names here: a new geometry texture
-// just declares its `reliefKey` (seed or cake_textures.config) and elements seat above it for free.
-export function surfaceRelief(style, overrides, radius = 1) {
-  const key = styleDef(style).reliefKey;
-  if (!key) return 0;
-  return (resolveStyleParams(style, overrides)[key] ?? 0) * radius;
 }

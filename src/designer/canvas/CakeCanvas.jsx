@@ -21,15 +21,23 @@ import { manualSeat } from '../geometry/spherePacking.js';
 import { hugScale, isDynamicHug, wallClampY, DEFAULT_HUG_FILL, DEFAULT_FOLD_DEG, DEFAULT_SPINE } from '../placement.js';
 import { recolorImageData } from '../shared/color/imageRecolor.js';
 import { applyGradient } from '../shared/color/gradientMaterial.js';
-import { surfaceRelief } from '../creamStyles.js';
+import { styleDef, resolveStyleParams } from '../creamStyles.js';
 import { frostingAllowsStyles } from '../frostings.js';
+import { makeWallReliefSampler } from '../geometry/creamWall.js';
 
-// Radial relief (world units) a tier's cream-wall finish pushes its SIDE out by — so side elements
-// seat OUTSIDE it and aren't swallowed by the displaced geometry (e.g. the cream-wave ribs). Gated by
-// the frosting type permitting styles (mirrors CakeTier's wall build); config-driven via surfaceRelief.
-function tierSurfaceRelief(tier) {
-  if (!tier || !frostingAllowsStyles(tier.frostingType)) return 0;
-  return surfaceRelief(tier.frostingStyle, tier.styleParams, tier.radius);
+// Per-tier sampler for the cream-wall SURFACE: (theta, v) → local radial relief (world units), so side
+// decor seats on the live wavy/swirled wall and hugs it, instead of a fixed offset (which buries decor
+// in the ribs) or a global lift (which floats small decor off the troughs). Memoised by wall+radius+
+// params (the height-field build is non-trivial). null when the frosting permits no style → flat wall.
+const _reliefSamplerCache = new Map();
+function tierReliefSampler(tier) {
+  if (!tier || !frostingAllowsStyles(tier.frostingType)) return null;
+  const wall = styleDef(tier.frostingStyle).wall;
+  if (wall === 'smooth') return null;
+  const params = resolveStyleParams(tier.frostingStyle, tier.styleParams);
+  const key = `${wall}|${tier.radius}|${JSON.stringify(params)}`;
+  if (!_reliefSamplerCache.has(key)) _reliefSamplerCache.set(key, makeWallReliefSampler(wall, tier.radius, params));
+  return _reliefSamplerCache.get(key);
 }
 
 function darkenHex(hex, amount) {
@@ -726,7 +734,7 @@ function StickerFace({ imageUrl, selected, color, groupColors, gradient, clipY, 
 }
 
 
-function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'round', radius }, surfaceLift = 0, selected, onSelect, onLongPress, onMove, onGroupMove, onMoveMany, moveSet, allStickers, onOrbitEnable, toolbar }) {
+function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'round', radius }, reliefSampler = null, selected, onSelect, onLongPress, onMove, onGroupMove, onMoveMany, moveSet, allStickers, onOrbitEnable, toolbar }) {
   const { camera, gl } = useThree();
   const didDrag           = useRef(false);
   const startPos          = useRef({ x: 0, y: 0 });
@@ -737,7 +745,9 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
   const pressedRef        = useRef(false);
 
   const isRect = shp.kind === 'rect';
-  const off    = SIDE_STICKER_SURFACE_OFFSET + surfaceLift + (sticker.radialOffset ?? 0);
+  // Base seat = fixed gap off the BASE wall. The drag hit-test (below) projects onto this base cylinder;
+  // the visible position adds the live surface relief so the decor hugs the displaced wall.
+  const off    = SIDE_STICKER_SURFACE_OFFSET + (sticker.radialOffset ?? 0);
   // Round: angle theta around the cylinder, decal curved to the wall. Rect: perimeter
   // fraction u along the rounded-rect wall, decal flat (the wall is flat).
   let cx, cz, yaw, curveRadius;
@@ -745,7 +755,13 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
     const pl = rectSidePlacement(shp, sticker.u ?? 0, off);
     cx = pl.x; cz = pl.z; yaw = pl.yaw; curveRadius = 0;
   } else {
-    const surfaceR = radius + off;
+    // Seat on the LIVE wall surface: sample the finish's local relief under THIS element (theta, v) so
+    // it hugs the wave/swirl ribs. Smooth/flat walls → sampler null → lift 0 (unchanged).
+    const lift = reliefSampler
+      ? reliefSampler(Math.atan2(Math.cos(sticker.theta), Math.sin(sticker.theta)),
+                      Math.min(1, Math.max(0, (sticker.y - baseY) / height)))
+      : 0;
+    const surfaceR = radius + off + lift;
     cx = surfaceR * Math.sin(sticker.theta); cz = surfaceR * Math.cos(sticker.theta);
     yaw = sticker.theta; curveRadius = surfaceR;
   }
@@ -1440,7 +1456,7 @@ function CakeScene({
               baseY={tier.baseY}
               height={tier.height}
               shp={tierShape(tier)}
-              surfaceLift={tierSurfaceRelief(tier)}
+              reliefSampler={tierReliefSampler(tier)}
               selected={isSelected}
               onSelect={(id, ctrlKey) => onStickerSelect(id, ctrlKey)}
               onLongPress={onStickerLongPress}
@@ -1523,14 +1539,20 @@ function CakeThumbnailScene({ config }) {
         const isSide = sticker.zone === 'side' || sticker.zone === 'middle_tier';
         if (isSide) {
           const tshp = tierShape(tier);
-          const off = SIDE_STICKER_SURFACE_OFFSET + tierSurfaceRelief(tier) + (sticker.radialOffset ?? 0);
+          const off = SIDE_STICKER_SURFACE_OFFSET + (sticker.radialOffset ?? 0);
+          const sampler = tierReliefSampler(tier);
           const thumbIsGlb = /\.(glb|gltf)(\?|$)/i.test(sticker.imageUrl ?? '');
           let px, pz, yaw, r = 0;
           if (tshp.kind === 'rect') {
             const pl = rectSidePlacement(tshp, sticker.u ?? 0, off);
             px = pl.x; pz = pl.z; yaw = pl.yaw;
           } else {
-            r = tier.radius + off;
+            // hug the live wall surface (local relief under this element); flat wall → 0
+            const lift = sampler
+              ? sampler(Math.atan2(Math.cos(sticker.theta), Math.sin(sticker.theta)),
+                        Math.min(1, Math.max(0, (sticker.y - tier.baseY) / tier.height)))
+              : 0;
+            r = tier.radius + off + lift;
             px = r * Math.sin(sticker.theta); pz = r * Math.cos(sticker.theta); yaw = sticker.theta;
           }
           return (

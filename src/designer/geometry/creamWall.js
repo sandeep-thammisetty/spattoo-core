@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { displaceCreamWaveCylinder } from '../shared/textures/creamWaveTexture.js';
+import { displaceCreamWaveCylinder, creamWaveFieldFor } from '../shared/textures/creamWaveTexture.js';
 
 // ── Styled cream walls — geometry strategies for the frosting STYLE axis ───────
 //
@@ -102,5 +102,29 @@ export function buildStyledWall(wall, radius, height, params = {}) {
     case 'swirl':  return displaceSwirl(denseCylinder(radius, height, 220, 160), radius,
       { amp: params.amp ?? 0.045, lobes: params.lobes ?? 9, twist: params.twist ?? 3.0 });
     default:       return denseCylinder(radius, height);
+  }
+}
+
+// Sampler for the SAME wall surface buildStyledWall builds: given a point's geometry angle `theta`
+// (= atan2(z, x), radians) and height fraction `v` ∈ [0,1], returns the wall's RADIAL displacement
+// (world units) there — i.e. the live surface height, so decor can seat on the wavy wall instead of a
+// fixed offset. Mirrors each displacement strategy exactly (reuses the wave field; same swirl formula).
+// Returns null for non-displacing walls (smooth / normal-map finishes) → caller treats as flat.
+export function makeWallReliefSampler(wall, radius, params = {}) {
+  switch (wall) {
+    case 'wave': {
+      const field  = creamWaveFieldFor({
+        ridges: params.ridges, lobes: params.lobes, waveAmp: params.waveAmp,
+        ribbonW: params.ribbonW, falloff: params.falloff,
+      });
+      const relief = (params.relief ?? 0.06) * radius;
+      return (theta, v) => relief * field.height(theta / TAU + 0.5, v) * field.reliefMask(v);
+    }
+    case 'swirl': {
+      const a = (params.amp ?? 0.045) * radius;
+      const lobes = params.lobes ?? 9, twist = params.twist ?? 3.0;
+      return (theta, v) => a * Math.sin(lobes * theta + twist * v * TAU);
+    }
+    default: return null;
   }
 }
