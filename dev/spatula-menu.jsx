@@ -158,12 +158,12 @@ function SpatulaMenu({ primaryColor = '#7d7f4a', initials = 'ST' }) {
         <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={s.svg}>
           <defs>
             <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0" stopColor="#2c2d30" />
-              <stop offset="0.5" stopColor="#1d1e21" />
-              <stop offset="1" stopColor="#121315" />
+              <stop offset="0" stopColor="#1b1b1d" />
+              <stop offset="0.5" stopColor="#0e0e10" />
+              <stop offset="1" stopColor="#050506" />
             </linearGradient>
             <radialGradient id="sheen" cx="0.36" cy="0.10" r="0.62">
-              <stop offset="0" stopColor="rgba(255,255,255,0.09)" />
+              <stop offset="0" stopColor="rgba(255,255,255,0.05)" />
               <stop offset="1" stopColor="rgba(255,255,255,0)" />
             </radialGradient>
             <filter id="soft" x="-40%" y="-10%" width="180%" height="120%">
@@ -171,6 +171,23 @@ function SpatulaMenu({ primaryColor = '#7d7f4a', initials = 'ST' }) {
             </filter>
             <filter id="blur"><feGaussianBlur stdDeviation="9" /></filter>
             <filter id="blurHole"><feGaussianBlur stdDeviation="2.5" /></filter>
+            {/* 3D: soft rounded specular highlight, lit from the top-left */}
+            <filter id="spec" x="-30%" y="-30%" width="160%" height="160%">
+              <feGaussianBlur in="SourceAlpha" stdDeviation="4" result="b" />
+              <feSpecularLighting in="b" surfaceScale="2.5" specularConstant="0.5" specularExponent="22" lightingColor="#dfe3e9" result="s">
+                <feDistantLight azimuth="235" elevation="62" />
+              </feSpecularLighting>
+              <feComposite in="s" in2="SourceAlpha" operator="in" />
+            </filter>
+            {/* 3D: inner shadow for depth (recessed edges, light pools in the centre) */}
+            <filter id="inner" x="-30%" y="-30%" width="160%" height="160%">
+              <feComponentTransfer in="SourceAlpha"><feFuncA type="table" tableValues="1 0" /></feComponentTransfer>
+              <feGaussianBlur stdDeviation="3.5" result="ab" />
+              <feOffset in="ab" dx="0" dy="-0.5" result="o" />
+              <feFlood floodColor="#000" floodOpacity="0.45" />
+              <feComposite in2="o" operator="in" result="sh" />
+              <feComposite in="sh" in2="SourceAlpha" operator="in" />
+            </filter>
             <clipPath id="sil"><path d={path} /></clipPath>
           </defs>
           <path d={`${path} ${hole}`} fill="url(#body)" fillRule="evenodd" filter="url(#soft)" />
@@ -187,6 +204,9 @@ function SpatulaMenu({ primaryColor = '#7d7f4a', initials = 'ST' }) {
             {/* the hole curl stays crisper so it reads as a swirl, not a smudge */}
             <path d={swirls[0]} fill="none" stroke="rgba(0,0,0,0.30)" strokeWidth={5} strokeLinecap="round" filter="url(#blurHole)" />
           </g>
+          {/* 3D shading: inner shadow (depth) + rounded specular highlight */}
+          <path d={`${path} ${hole}`} fill="#000" fillRule="evenodd" filter="url(#inner)" />
+          <path d={path} fill="#000" filter="url(#spec)" />
           {/* soft matte sheen + crisp inner edge */}
           <path d={`${path} ${hole}`} fill="url(#sheen)" fillRule="evenodd" />
           <path d={path} fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="1.5" />

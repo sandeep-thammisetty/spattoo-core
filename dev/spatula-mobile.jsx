@@ -99,16 +99,33 @@ function MobilePreview({ primaryColor = '#7d7f4a', initials = 'ST' }) {
           <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{ position: 'absolute', inset: 0, overflow: 'visible' }}>
             <defs>
               <linearGradient id="mbody" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0" stopColor="#2c2d30" /><stop offset="0.55" stopColor="#1c1d20" /><stop offset="1" stopColor="#121315" />
+                <stop offset="0" stopColor="#1b1b1d" /><stop offset="0.55" stopColor="#0e0e10" /><stop offset="1" stopColor="#050506" />
               </linearGradient>
               <radialGradient id="msheen" cx="0.5" cy="0.1" r="0.7">
-                <stop offset="0" stopColor="rgba(255,255,255,0.08)" /><stop offset="1" stopColor="rgba(255,255,255,0)" />
+                <stop offset="0" stopColor="rgba(255,255,255,0.05)" /><stop offset="1" stopColor="rgba(255,255,255,0)" />
               </radialGradient>
               <filter id="msoft" x="-20%" y="-60%" width="140%" height="220%">
                 <feDropShadow dx="0" dy="6" stdDeviation="12" floodColor="#000" floodOpacity="0.26" />
               </filter>
+              <filter id="mspec" x="-30%" y="-30%" width="160%" height="160%">
+                <feGaussianBlur in="SourceAlpha" stdDeviation="4" result="b" />
+                <feSpecularLighting in="b" surfaceScale="2.5" specularConstant="0.5" specularExponent="22" lightingColor="#dfe3e9" result="s">
+                  <feDistantLight azimuth="235" elevation="62" />
+                </feSpecularLighting>
+                <feComposite in="s" in2="SourceAlpha" operator="in" />
+              </filter>
+              <filter id="minner" x="-30%" y="-30%" width="160%" height="160%">
+                <feComponentTransfer in="SourceAlpha"><feFuncA type="table" tableValues="1 0" /></feComponentTransfer>
+                <feGaussianBlur stdDeviation="3.5" result="ab" />
+                <feOffset in="ab" dx="0" dy="-0.5" result="o" />
+                <feFlood floodColor="#000" floodOpacity="0.45" />
+                <feComposite in2="o" operator="in" result="sh" />
+                <feComposite in="sh" in2="SourceAlpha" operator="in" />
+              </filter>
             </defs>
             <path d={`${path} ${hole}`} fill="url(#mbody)" fillRule="evenodd" filter="url(#msoft)" />
+            <path d={`${path} ${hole}`} fill="#000" fillRule="evenodd" filter="url(#minner)" />
+            <path d={path} fill="#000" filter="url(#mspec)" />
             <path d={`${path} ${hole}`} fill="url(#msheen)" fillRule="evenodd" />
             <circle cx={holeX} cy={cy} r={hr} fill="none" stroke="rgba(0,0,0,0.4)" strokeWidth="1.4" />
           </svg>

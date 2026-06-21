@@ -844,12 +844,12 @@ function SpatulaFrame() {
         style={{ position: 'absolute', top: 0, left: '50%', transform: 'translateX(-50%)', overflow: 'visible' }}>
         <defs>
           <linearGradient id="spat-body" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stopColor="#2c2d30" />
-            <stop offset="0.5" stopColor="#1d1e21" />
-            <stop offset="1" stopColor="#121315" />
+            <stop offset="0" stopColor="#1b1b1d" />
+            <stop offset="0.5" stopColor="#0e0e10" />
+            <stop offset="1" stopColor="#050506" />
           </linearGradient>
           <radialGradient id="spat-sheen" cx="0.36" cy="0.06" r="0.5">
-            <stop offset="0" stopColor="rgba(255,255,255,0.09)" />
+            <stop offset="0" stopColor="rgba(255,255,255,0.05)" />
             <stop offset="1" stopColor="rgba(255,255,255,0)" />
           </radialGradient>
           <filter id="spat-soft" x="-60%" y="-6%" width="220%" height="112%">
@@ -857,6 +857,22 @@ function SpatulaFrame() {
           </filter>
           <filter id="spat-blur"><feGaussianBlur stdDeviation="9" /></filter>
           <filter id="spat-blurHole"><feGaussianBlur stdDeviation="2.5" /></filter>
+          {/* 3D: thin edge sheen (top-left light) + thin inner shadow → flat, not chunky */}
+          <filter id="spat-spec" x="-30%" y="-30%" width="160%" height="160%">
+            <feGaussianBlur in="SourceAlpha" stdDeviation="4" result="b" />
+            <feSpecularLighting in="b" surfaceScale="2.5" specularConstant="0.5" specularExponent="22" lightingColor="#dfe3e9" result="s">
+              <feDistantLight azimuth="235" elevation="62" />
+            </feSpecularLighting>
+            <feComposite in="s" in2="SourceAlpha" operator="in" />
+          </filter>
+          <filter id="spat-inner" x="-30%" y="-30%" width="160%" height="160%">
+            <feComponentTransfer in="SourceAlpha"><feFuncA type="table" tableValues="1 0" /></feComponentTransfer>
+            <feGaussianBlur stdDeviation="3.5" result="ab" />
+            <feOffset in="ab" dx="0" dy="-0.5" result="o" />
+            <feFlood floodColor="#000" floodOpacity="0.45" />
+            <feComposite in2="o" operator="in" result="sh" />
+            <feComposite in="sh" in2="SourceAlpha" operator="in" />
+          </filter>
           <clipPath id="spat-sil"><path d={path} /></clipPath>
         </defs>
         <path d={`${path} ${hole}`} fill="url(#spat-body)" fillRule="evenodd" filter="url(#spat-soft)" />
@@ -871,6 +887,9 @@ function SpatulaFrame() {
           </g>
           <path d={swirls[0]} fill="none" stroke="rgba(0,0,0,0.30)" strokeWidth={5} strokeLinecap="round" filter="url(#spat-blurHole)" />
         </g>
+        {/* 3D shading: thin inner shadow (depth) + rounded edge specular */}
+        <path d={`${path} ${hole}`} fill="#000" fillRule="evenodd" filter="url(#spat-inner)" />
+        <path d={path} fill="#000" filter="url(#spat-spec)" />
         <path d={`${path} ${hole}`} fill="url(#spat-sheen)" fillRule="evenodd" />
         <path d={path} fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="1.5" />
         <circle cx={cx} cy={holeY} r={hr} fill="none" stroke="rgba(0,0,0,0.4)" strokeWidth="1.5" />
@@ -940,16 +959,34 @@ function MobileSpatulaBar() {
       <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{ position: 'absolute', top: '50%', left: 0, transform: 'translateY(-50%)', overflow: 'visible' }}>
         <defs>
           <linearGradient id="mbar-body" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stopColor="#2c2d30" /><stop offset="0.55" stopColor="#1c1d20" /><stop offset="1" stopColor="#121315" />
+            <stop offset="0" stopColor="#1b1b1d" /><stop offset="0.55" stopColor="#0e0e10" /><stop offset="1" stopColor="#050506" />
           </linearGradient>
           <radialGradient id="mbar-sheen" cx="0.5" cy="0.08" r="0.7">
-            <stop offset="0" stopColor="rgba(255,255,255,0.08)" /><stop offset="1" stopColor="rgba(255,255,255,0)" />
+            <stop offset="0" stopColor="rgba(255,255,255,0.05)" /><stop offset="1" stopColor="rgba(255,255,255,0)" />
           </radialGradient>
           <filter id="mbar-soft" x="-10%" y="-60%" width="120%" height="220%">
             <feDropShadow dx="0" dy="5" stdDeviation="11" floodColor="#000" floodOpacity="0.24" />
           </filter>
+          {/* 3D: thin edge sheen + thin inner shadow (flat, not chunky) */}
+          <filter id="mbar-spec" x="-30%" y="-30%" width="160%" height="160%">
+            <feGaussianBlur in="SourceAlpha" stdDeviation="4" result="b" />
+            <feSpecularLighting in="b" surfaceScale="2.5" specularConstant="0.5" specularExponent="22" lightingColor="#dfe3e9" result="s">
+              <feDistantLight azimuth="235" elevation="62" />
+            </feSpecularLighting>
+            <feComposite in="s" in2="SourceAlpha" operator="in" />
+          </filter>
+          <filter id="mbar-inner" x="-30%" y="-30%" width="160%" height="160%">
+            <feComponentTransfer in="SourceAlpha"><feFuncA type="table" tableValues="1 0" /></feComponentTransfer>
+            <feGaussianBlur stdDeviation="3.5" result="ab" />
+            <feOffset in="ab" dx="0" dy="-0.5" result="o" />
+            <feFlood floodColor="#000" floodOpacity="0.45" />
+            <feComposite in2="o" operator="in" result="sh" />
+            <feComposite in="sh" in2="SourceAlpha" operator="in" />
+          </filter>
         </defs>
         <path d={`${path} ${hole}`} fill="url(#mbar-body)" fillRule="evenodd" filter="url(#mbar-soft)" />
+        <path d={`${path} ${hole}`} fill="#000" fillRule="evenodd" filter="url(#mbar-inner)" />
+        <path d={path} fill="#000" filter="url(#mbar-spec)" />
         <path d={`${path} ${hole}`} fill="url(#mbar-sheen)" fillRule="evenodd" />
         <circle cx={holeX} cy={cy} r={hr} fill="none" stroke="rgba(0,0,0,0.4)" strokeWidth="1.4" />
       </svg>
