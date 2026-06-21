@@ -5569,7 +5569,7 @@ const s = {
     position: 'relative', zIndex: 1,
     flex: 1, width: '100%',
     display: 'flex', flexDirection: 'column', alignItems: 'center',
-    padding: '12px 0 30px',
+    padding: '96px 0 30px',   // clear the cap + hang-hole before the first nav item
   },
   sidebarDivider: {
     height: 1, width: 32,
