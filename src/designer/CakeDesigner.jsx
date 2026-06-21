@@ -879,6 +879,84 @@ function SpatulaFrame() {
   );
 }
 
+// ── Mobile: the spatula laid horizontally as the bottom nav bar ─────────────────
+// Cap + hang-hole on the LEFT, handle (icons sit on it), paddle on the RIGHT that
+// bulges both up and down. Transpose of the vertical silhouette; symmetric top/
+// bottom. handleHalf/bladeHalf are half-THICKNESSES (vertical).
+function spatulaBarPath({ W, H, capLeftX, handleHalf, bladeHalf, shoulderX, bladeFullX, bladeRightX, topCornerR, botCornerR }) {
+  const cy = H / 2;
+  const capR = handleHalf;
+  const capCX = capLeftX + capR;
+  const Tt = cy - handleHalf, Tb = cy + handleHalf;   // handle top / bottom
+  const Bt = cy - bladeHalf,  Bb = cy + bladeHalf;     // blade top / bottom
+  const sh = bladeFullX - shoulderX;
+  const crt = Math.min(topCornerR, bladeHalf);
+  const crb = Math.min(botCornerR, bladeHalf);
+  return [
+    `M ${capCX} ${Tt}`,
+    `L ${shoulderX} ${Tt}`,
+    `C ${shoulderX + sh * 0.5} ${Tt} ${bladeFullX - sh * 0.5} ${Bt} ${bladeFullX} ${Bt}`,
+    `L ${bladeRightX - crt} ${Bt}`,
+    `Q ${bladeRightX} ${Bt} ${bladeRightX} ${Bt + crt}`,
+    `L ${bladeRightX} ${Bb - crb}`,
+    `Q ${bladeRightX} ${Bb} ${bladeRightX - crb} ${Bb}`,
+    `L ${bladeFullX} ${Bb}`,
+    `C ${bladeFullX - sh * 0.5} ${Bb} ${shoulderX + sh * 0.5} ${Tb} ${shoulderX} ${Tb}`,
+    `L ${capCX} ${Tb}`,
+    `A ${capR} ${capR} 0 0 1 ${capCX} ${Tt}`,
+    'Z',
+  ].join(' ');
+}
+
+// Absolutely-positioned SVG that fills the mobile bottom-nav band (measured width)
+// and draws the horizontal spatula behind the icons. pointer-events none.
+const MOBILE_BAR = { handleHalf: 19, bladeHalf: 34, bladeLen: 135, shoulderSpan: 36, topCornerR: 4, botCornerR: 54, holeOff: 4, lift: 4 };
+const MOBILE_BAR_H = MOBILE_BAR.bladeHalf * 2 + 4;   // band height (paddle fits)
+
+function MobileSpatulaBar() {
+  const ref = useRef(null);
+  const [w, setW] = useState(360);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const update = () => setW(el.clientWidth || 360);
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const { handleHalf, bladeHalf, bladeLen, shoulderSpan, topCornerR, botCornerR, holeOff } = MOBILE_BAR;
+  const W = w, H = MOBILE_BAR_H, cy = H / 2;
+  const capLeftX = 6, bladeRightX = W - 6;
+  const shoulderX = bladeRightX - bladeLen;
+  const bladeFullX = shoulderX + shoulderSpan;
+  const holeX = capLeftX + handleHalf + holeOff, hr = 7;
+  const path = spatulaBarPath({ W, H, capLeftX, handleHalf, bladeHalf, shoulderX, bladeFullX, bladeRightX, topCornerR, botCornerR });
+  const hole = `M ${holeX} ${cy - hr} a ${hr} ${hr} 0 1 0 0 ${2 * hr} a ${hr} ${hr} 0 1 0 0 ${-2 * hr} Z`;
+
+  return (
+    <div ref={ref} style={{ position: 'absolute', inset: 0, zIndex: 0, overflow: 'visible', pointerEvents: 'none' }}>
+      <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{ position: 'absolute', top: '50%', left: 0, transform: 'translateY(-50%)', overflow: 'visible' }}>
+        <defs>
+          <linearGradient id="mbar-body" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stopColor="#2c2d30" /><stop offset="0.55" stopColor="#1c1d20" /><stop offset="1" stopColor="#121315" />
+          </linearGradient>
+          <radialGradient id="mbar-sheen" cx="0.5" cy="0.08" r="0.7">
+            <stop offset="0" stopColor="rgba(255,255,255,0.08)" /><stop offset="1" stopColor="rgba(255,255,255,0)" />
+          </radialGradient>
+          <filter id="mbar-soft" x="-10%" y="-60%" width="120%" height="220%">
+            <feDropShadow dx="0" dy="5" stdDeviation="11" floodColor="#000" floodOpacity="0.24" />
+          </filter>
+        </defs>
+        <path d={`${path} ${hole}`} fill="url(#mbar-body)" fillRule="evenodd" filter="url(#mbar-soft)" />
+        <path d={`${path} ${hole}`} fill="url(#mbar-sheen)" fillRule="evenodd" />
+        <circle cx={holeX} cy={cy} r={hr} fill="none" stroke="rgba(0,0,0,0.4)" strokeWidth="1.4" />
+      </svg>
+    </div>
+  );
+}
+
 // ── Sidebar tooltip ───────────────────────────────────────────────────────────
 function SidebarTooltip({ label, children }) {
   const [visible, setVisible] = useState(false);
@@ -5124,6 +5202,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       {/* ── Mobile bottom nav ── */}
       {isMobile && (
         <div style={s.mobileBottomNav}>
+          <MobileSpatulaBar />
+          <div style={s.mobileNavRow}>
           {/* New cake — circle + as first nav item */}
           <button style={{ ...s.sidebarBtn, borderRadius: '50%', border: '1.8px solid rgba(255,255,255,0.45)', color: '#fff' }} onClick={handleNewCake}>
             <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
@@ -5157,6 +5237,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               </button>
             );
           })}
+          </div>
         </div>
       )}
 
@@ -5869,9 +5950,16 @@ const s = {
     background: '#fff', borderBottom: '1px solid #f0e8ea',
     position: 'relative', zIndex: 10,
   },
+  // Spatula-shaped bottom bar: a transparent band tall enough for the paddle to
+  // bulge both ways; MobileSpatulaBar draws the silhouette, icons sit on the handle.
   mobileBottomNav: {
-    display: 'flex', justifyContent: 'space-around', alignItems: 'center',
-    height: 60, background: '#18191b', flexShrink: 0, padding: '0 4px',
+    position: 'relative', overflow: 'visible', flexShrink: 0,
+    height: MOBILE_BAR_H, background: 'transparent', marginBottom: MOBILE_BAR.lift,
+  },
+  mobileNavRow: {
+    position: 'absolute', zIndex: 1, top: '50%', transform: 'translateY(-50%)',
+    left: 48, right: 12, height: 40,
+    display: 'flex', alignItems: 'center', justifyContent: 'space-around',
   },
   flyoutMobile: {
     position: 'relative',
