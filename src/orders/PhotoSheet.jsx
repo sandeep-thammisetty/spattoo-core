@@ -135,28 +135,35 @@ export default function PhotoSheet({ order, onClose }) {
       <div style={{ ...s.body, flexDirection: isMobile ? 'column' : 'row' }}>
         {/* Palette */}
         <div style={{ ...s.palette, ...(isMobile ? { width: '100%', borderRight: 'none', borderBottom: '1.5px solid #E8E4DC', maxHeight: '34vh', flexShrink: 0 } : {}) }}>
-          <div style={s.paletteTitle}>Customer photos</div>
+          <div style={s.intro}>
+            <b>A4 print simulator.</b> Edible sugar sheets print on A4. Lay out the customer’s photos
+            at the exact size you’ll print, then download a print-ready PDF for your edible printer.
+            The sheet is shown to scale — drag a photo to move it, drag its corner to resize.
+          </div>
+          <div style={s.paletteTitle}>Uploaded photos{frames.length ? ` (${frames.length})` : ''}</div>
           {frames.length === 0 && <div style={s.hint}>No customer photos in this order.</div>}
-          {frames.map(f => (
-            <div key={f.id} style={s.palItem}>
-              <div style={s.palThumb}>
-                {imgs[f.id]
-                  ? <img src={imgs[f.id].dataUrl} alt={f.name} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
-                  : <div style={{ fontSize: 10, color: '#aaa' }}>…</div>}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+            {frames.map(f => (
+              <div key={f.id} style={s.palCard}>
+                <div style={s.palThumb}>
+                  {imgs[f.id]
+                    ? <img src={imgs[f.id].dataUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                    : <div style={{ fontSize: 10, color: '#aaa' }}>…</div>}
+                </div>
+                <button style={s.addBtn} onClick={() => addFrame(f.id)}>+ Add</button>
               </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={s.palName}>{f.name}</div>
-                <button style={s.addBtn} onClick={() => addFrame(f.id)}>+ Add to sheet</button>
-              </div>
-            </div>
-          ))}
-          {loadErr && <div style={{ ...s.hint, color: '#c0392b' }}>Some images couldn’t load (check R2 CORS for this origin).</div>}
-          <div style={s.note}>The A4 is shown to scale — use it to judge real print size. Drag to move, drag the corner to resize.</div>
+            ))}
+          </div>
+          {loadErr && <div style={{ ...s.hint, color: '#c0392b', marginTop: 10 }}>Some images couldn’t load (check R2 CORS for this origin).</div>}
         </div>
 
         {/* A4 sheet */}
         <div style={s.stage}>
           <div ref={sheetRef} style={{ ...s.sheet, ...(isMobile ? { height: 'auto', width: 'min(92vw, 460px)' } : {}) }} onPointerDown={e => e.stopPropagation()}>
+            <div style={s.watermark}>
+              <div style={s.watermarkBig}>A4</div>
+              <div style={s.watermarkSub}>210 × 297 mm</div>
+            </div>
             {items.map(it => {
               const rec = imgs[it.frameId];
               const seld = sel === it.uid;
@@ -192,13 +199,15 @@ const s = {
   ghostBtn: { padding: '9px 14px', borderRadius: 10, border: '1.5px solid #ccc', background: '#fff', fontSize: 13, fontWeight: 700, color: '#555', cursor: 'pointer' },
   body: { flex: 1, display: 'flex', overflow: 'hidden' },
   palette: { width: 260, flexShrink: 0, borderRight: '1.5px solid #E8E4DC', background: '#fff', padding: 16, overflowY: 'auto' },
+  intro: { fontSize: 12, color: '#5b5340', lineHeight: 1.6, marginBottom: 14, paddingBottom: 12, borderBottom: '1px dashed #e6e2ea' },
   paletteTitle: { fontSize: 11, fontWeight: 800, letterSpacing: 0.6, textTransform: 'uppercase', color: '#8a7a80', marginBottom: 10 },
-  palItem: { display: 'flex', gap: 10, alignItems: 'center', marginBottom: 12 },
-  palThumb: { width: 56, height: 56, flexShrink: 0, borderRadius: 8, border: '1px solid #e6e2ea', background: '#faf9fb', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
-  palName: { fontSize: 12, fontWeight: 700, color: '#2C4433', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
-  addBtn: { marginTop: 4, padding: '4px 10px', borderRadius: 8, border: '1.5px solid #C5D4C8', background: '#F7FAF8', fontSize: 11, fontWeight: 700, color: '#3D5A44', cursor: 'pointer' },
+  palCard: { width: 72, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5 },
+  palThumb: { width: 64, height: 64, flexShrink: 0, borderRadius: 8, border: '1px solid #e6e2ea', background: '#faf9fb', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  addBtn: { padding: '4px 12px', borderRadius: 8, border: '1.5px solid #C5D4C8', background: '#F7FAF8', fontSize: 11, fontWeight: 700, color: '#3D5A44', cursor: 'pointer' },
   hint: { fontSize: 11, color: '#8a7a80', lineHeight: 1.5 },
-  note: { fontSize: 11, color: '#8a7a80', lineHeight: 1.5, marginTop: 14, paddingTop: 12, borderTop: '1px dashed #e6e2ea' },
+  watermark: { position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none', color: '#ececE6', userSelect: 'none' },
+  watermarkBig: { fontSize: 'clamp(48px, 14vw, 140px)', fontWeight: 800, letterSpacing: 4, lineHeight: 1 },
+  watermarkSub: { fontSize: 'clamp(10px, 2.4vw, 16px)', fontWeight: 700, letterSpacing: 3, marginTop: 8 },
   stage: { flex: 1, overflow: 'auto', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 24, background: '#EFEDE8' },
   sheet: { position: 'relative', height: 'min(calc(100vh - 130px), 980px)', aspectRatio: `${A4_ASPECT}`, background: '#fff', boxShadow: '0 6px 24px rgba(0,0,0,0.15)', borderRadius: 2 },
   resizeHandle: { position: 'absolute', right: -7, bottom: -7, width: 16, height: 16, borderRadius: 4, background: '#6c47ff', border: '2px solid #fff', cursor: 'nwse-resize', touchAction: 'none' },

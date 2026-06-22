@@ -8,19 +8,29 @@ const PhotoGlyph = () => (
   </svg>
 );
 
-// Show the print-sheet action only when the order actually has customer-uploaded photo frames.
-function hasPhotoFrames(order) {
-  return (order?.design_snapshot?.stickers ?? []).some(s => s?.photoMask && s?.photoUrl);
+// How many customer-uploaded photo frames the order carries.
+function photoFrameCount(order) {
+  return (order?.design_snapshot?.stickers ?? []).filter(s => s?.photoMask && s?.photoUrl).length;
 }
 
-function PhotoSheetLauncher({ order }) {
+// Order-detail section: surfaces the customer's uploaded photos and opens the A4 page simulator.
+function CustomPhotosSection({ order }) {
   const [open, setOpen] = useState(false);
-  if (!hasPhotoFrames(order)) return null;
+  const n = photoFrameCount(order);
+  if (!n) return null;
   return (
-    <>
-      <IconAction glyph={<PhotoGlyph />} label="Print sheet" onClick={() => setOpen(true)} />
+    <Section title="Custom photos">
+      <div style={{ fontSize: 13, color: '#5C6B62', lineHeight: 1.6, marginBottom: 12 }}>
+        The customer uploaded <b>{n}</b> custom photo{n > 1 ? 's' : ''} for this cake. Open the
+        A4 page simulator to size and arrange {n > 1 ? 'them' : 'it'} on a sheet, then download a
+        print-ready PDF for your edible printer.
+      </div>
+      <button onClick={() => setOpen(true)}
+        style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '9px 16px', borderRadius: 10, border: '1.5px solid #3D5A44', background: '#fff', color: '#3D5A44', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+        <PhotoGlyph /> Open A4 simulator
+      </button>
       {open && <PhotoSheet order={order} onClose={() => setOpen(false)} />}
-    </>
+    </Section>
   );
 }
 
@@ -485,7 +495,6 @@ function OrderDetail({ order, onEditDesign, onStatusChange, onOrderEdited, apiCl
   const cakeActions = (
     <div style={{ display: 'flex', gap: 12, justifyContent: 'center', alignItems: 'center', flexWrap: 'wrap' }}>
       <XrayLauncher order={order} apiClient={apiClient} />
-      <PhotoSheetLauncher order={order} />
       {editBtn}
       {!editing && <IconAction glyph={<PencilGlyph />} label="Edit Details" onClick={() => setEditing(true)} />}
     </div>
@@ -517,6 +526,7 @@ function OrderDetail({ order, onEditDesign, onStatusChange, onOrderEdited, apiCl
           : <>
               <StatusProgress status={order.status} onChange={handleStatus} disabled={changingStatus} />
               <DetailSections order={order} name={name} flavours={flavours} delivDate={delivDate} />
+              <CustomPhotosSection order={order} />
               <Section title="History">
                 <AuditTrail orderId={order.id} apiClient={apiClient} refresh={auditRefresh} />
               </Section>
@@ -560,6 +570,7 @@ function OrderDetail({ order, onEditDesign, onStatusChange, onOrderEdited, apiCl
           : <>
               <StatusProgress status={order.status} onChange={handleStatus} disabled={changingStatus} />
               <DetailSections order={order} name={name} flavours={flavours} delivDate={delivDate} />
+              <CustomPhotosSection order={order} />
               <Section title="History">
                 <AuditTrail orderId={order.id} apiClient={apiClient} refresh={auditRefresh} />
               </Section>
