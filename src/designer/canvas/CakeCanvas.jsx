@@ -440,7 +440,9 @@ function useMaskAlpha(maskUrl) {
 
 function applyPhotoTransform(tex, t, imgAspect) {
   const zoom = Math.max(0.2, t?.zoom ?? 1);
-  const rot = ((t?.rot ?? 0) * Math.PI) / 180;   // 2D rotation of the photo within the frame
+  // Rotating the texture's UV frame turns the image the opposite way, so negate to make the ↻ control
+  // visually rotate the photo clockwise (and ↺ anticlockwise).
+  const rot = -((t?.rot ?? 0) * Math.PI) / 180;   // 2D rotation of the photo within the frame
   let rx = 1, ry = 1;                       // cover-fit a (imgAspect) image into a square
   if (imgAspect >= 1) rx = 1 / imgAspect;   // landscape → show full height, crop width
   else ry = imgAspect;                       // portrait  → show full width,  crop height

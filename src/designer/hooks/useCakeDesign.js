@@ -298,7 +298,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
   // guard; `patternDeletable` mirrors the pattern's placement_config.parts_deletable).
   function addSticker(element, zone, tierIndex, placementMode, position = {}, extra = {}) {
     const isGlb = /\.(glb|gltf)(\?|$)/i.test(element.image_url ?? '');
-    const defaultScale = element.placement_config?.r ?? (isGlb ? 2.5 : 1);
+    const defaultScale = element.placement_config?.r ?? (isGlb ? 2.5 : element.placement_config?.photo?.mask ? 3.5 : 1);
     // Edge-seated modes (perch, verge) seat onto the front rim edge and carry a calibrated lean —
     // computed by the shared edgeSeatSeed helper (same seed the chooser's move path uses, so both
     // paths land identically). Verge leans about the rim tangent at render (radial-outward); perch
