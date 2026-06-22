@@ -3789,7 +3789,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           controls.push(
             <div key="zoom" style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, width: '100%' }}>
               <span style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888' }}>Zoom</span>
-              <SizeDial size={t.zoom ?? 1} min={1} max={4} step={0.1} onChange={v => setT({ zoom: v })} />
+              <SizeDial size={t.zoom ?? 1} min={0.5} max={4} step={0.1} onChange={v => setT({ zoom: v })} />
             </div>,
             <div key="pan" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, marginTop: 6, width: '100%' }}>
               <span style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888' }}>Position</span>
@@ -3828,8 +3828,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           <button key="ht-up" style={s.tbIconBtn} onClick={() => updateSticker(el.id, { yOffset: Math.min(1.2, +(yo + 0.1).toFixed(2)) })}>↑</button>,
         ] });
       }
-      // Depth (radialOffset) — side stickers only
-      const isSide = sticker?.zone === 'side' || sticker?.zone === 'middle_tier';
+      // Depth (radialOffset) — side stickers only. A photo frame is a flat print that must stay
+      // flush on the wall (config-gated on photoMask, like the Fold control on foldable), so it has
+      // no Depth control and keeps radialOffset 0.
+      const isSide = (sticker?.zone === 'side' || sticker?.zone === 'middle_tier') && !sticker?.photoMask;
       if (isSide) {
         const ro = sticker?.radialOffset ?? 0;
         groups.push({ key: 'ro', divider: true, controls: [
