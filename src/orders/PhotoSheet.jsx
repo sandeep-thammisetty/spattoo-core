@@ -10,6 +10,8 @@ import { buildA4Pdf } from './pdf.js';
 // math: the A4 is the ruler. Edible sugar sheets are A4, so this is print-ready.
 
 const A4_ASPECT = 210 / 297;   // portrait W/H
+const A4_WIDTH_IN = 210 / 25.4;   // 8.27" — used to size the cake-fit guide circles proportionally
+const GUIDE_SIZES = [6, 7, 8];    // inch cake diameters the baker can check fit against
 
 let _uid = 0;
 const uid = () => `it${++_uid}`;
@@ -34,6 +36,7 @@ export default function PhotoSheet({ order, onClose }) {
   const [loadErr, setLoadErr] = useState(false);
   const [items, setItems] = useState([]);       // [{ uid, frameId, x, y, size }] x/y/size as A4-width fractions
   const [sel, setSel] = useState(null);
+  const [guide, setGuide] = useState(null);   // selected cake-size guide (inch diameter) or null
   const [busy, setBusy] = useState(false);
   const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' && window.innerWidth < 760);
   const sheetRef = useRef(null);
@@ -155,6 +158,19 @@ export default function PhotoSheet({ order, onClose }) {
             ))}
           </div>
           {loadErr && <div style={{ ...s.hint, color: '#c0392b', marginTop: 10 }}>Some images couldn’t load (check R2 CORS for this origin).</div>}
+
+          <div style={s.guideBlock}>
+            <div style={s.paletteTitle}>Cake size guide</div>
+            <div style={{ fontSize: 11, color: '#8a7a80', lineHeight: 1.5, marginBottom: 8 }}>
+              Show a dotted circle for a cake top — drag a photo onto it to check the fit. Guides aren’t printed.
+            </div>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              <button onClick={() => setGuide(null)} style={{ ...s.guideBtn, ...(guide === null ? s.guideBtnOn : {}) }}>Off</button>
+              {GUIDE_SIZES.map(d => (
+                <button key={d} onClick={() => setGuide(d)} style={{ ...s.guideBtn, ...(guide === d ? s.guideBtnOn : {}) }}>{d}″</button>
+              ))}
+            </div>
+          </div>
         </div>
 
         {/* A4 sheet */}
@@ -185,6 +201,16 @@ export default function PhotoSheet({ order, onClose }) {
                 </div>
               );
             })}
+            {guide && (
+              <div style={{
+                position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)',
+                width: `${(guide / A4_WIDTH_IN) * 100}%`, aspectRatio: '1 / 1',
+                border: '2px dashed #b08968', borderRadius: '50%', pointerEvents: 'none',
+                display: 'flex', justifyContent: 'center',
+              }}>
+                <span style={{ transform: 'translateY(-50%)', background: '#fff', padding: '0 6px', fontSize: 11, fontWeight: 700, color: '#b08968' }}>{guide}″ cake</span>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -205,6 +231,9 @@ const s = {
   palThumb: { width: 64, height: 64, flexShrink: 0, borderRadius: 8, border: '1px solid #e6e2ea', background: '#faf9fb', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   addBtn: { padding: '4px 12px', borderRadius: 8, border: '1.5px solid #C5D4C8', background: '#F7FAF8', fontSize: 11, fontWeight: 700, color: '#3D5A44', cursor: 'pointer' },
   hint: { fontSize: 11, color: '#8a7a80', lineHeight: 1.5 },
+  guideBlock: { marginTop: 16, paddingTop: 14, borderTop: '1px dashed #e6e2ea' },
+  guideBtn: { padding: '5px 12px', borderRadius: 8, border: '1.5px solid #d8cfd9', background: '#fff', fontSize: 12, fontWeight: 700, color: '#8a7a80', cursor: 'pointer' },
+  guideBtnOn: { borderColor: '#b08968', background: '#fbf3ec', color: '#8a5a36' },
   watermark: { position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none', color: '#ececE6', userSelect: 'none' },
   watermarkBig: { fontSize: 'clamp(48px, 14vw, 140px)', fontWeight: 800, letterSpacing: 4, lineHeight: 1 },
   watermarkSub: { fontSize: 'clamp(10px, 2.4vw, 16px)', fontWeight: 700, letterSpacing: 3, marginTop: 8 },
