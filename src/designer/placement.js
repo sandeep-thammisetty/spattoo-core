@@ -123,6 +123,24 @@ export function scaleRangeOf(element, dMin, dMax, dStep) {
   };
 }
 
+// Max Size for a photo frame on the TOP surface: grow until the frame's shape reaches the cake-top
+// boundary. Assumes the mask shape fills its square plane (half-extent = stickerSize/2 at scale 1).
+//   round cake + round frame  → circle meets the rim (fills)
+//   round cake + box frame    → square inscribed in the circle (corner-limited)
+//   rect cake (any frame)     → grows to the nearest edge (inscribed; fills when shapes/aspect match)
+// `frameShape` is the authored placement_config.photo.shape ('round' | 'rect' | 'other'); anything
+// not 'round' is treated as a box (bounding-square) so hearts/stars inscribe rather than overhang.
+export function frameTopMaxScale(shp, frameShape, stickerSize = STICKER_SIZE) {
+  const h = stickerSize / 2;
+  let s;
+  if (shp.kind === 'round') {
+    s = frameShape === 'round' ? shp.radius / h : shp.radius / (h * Math.SQRT2);
+  } else {
+    s = Math.min(shp.halfW, shp.halfD) / h;
+  }
+  return Math.max(1, s);   // never below 1× (a tiny cake shouldn't trap the dial under the default)
+}
+
 // ── Facing-offset unit normalization ─────────────────────────────────────────
 // A GLB's authored facing offset (placement_config.rotation) is AUTHORED in degrees — the same
 // convention the calibrator and piping (top_/bottom_rotation) already use — but consumed by THREE

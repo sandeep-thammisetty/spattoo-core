@@ -7,7 +7,7 @@ import { CAMERA_POSITION, CAMERA_POSITION_MOBILE, PIPING_FRONT_ANGLE, TIER_RADII
 import PipingPreview from './canvas/PipingPreview.jsx';
 import TopperPreview from './canvas/TopperPreview.jsx';
 import { CakeSpinner, CakeSpinnerFill, DecorLoadingOverlay } from './canvas/CakeSpinner.jsx';
-import { isSinglePerSlot, placementSlots, isDynamicHug, facingOffsetRadians, scaleRangeOf, DEFAULT_FOLD_DEG, edgeSeatSeed } from './placement.js';
+import { isSinglePerSlot, placementSlots, isDynamicHug, facingOffsetRadians, scaleRangeOf, frameTopMaxScale, DEFAULT_FOLD_DEG, edgeSeatSeed } from './placement.js';
 import { tierShape } from './geometry/surface.js';
 import { packCluster, clusterRadii, manualSeat } from './geometry/spherePacking.js';
 import { finishToMaterial, finishOf } from './geometry/finish.js';
@@ -3839,8 +3839,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       const sticker = design.stickers.find(stkr => stkr.id === el.id);
       // Same SizeDial as piping + the hero chooser — one Size control everywhere.
       const scRange = scaleRangeOf(elementById.get(sticker?.elementId), 0.25, 8, 0.05);
+      // A photo frame on the TOP may grow until its shape reaches the cake-top boundary (fills to the
+      // rim when frame & cake shapes match, inscribes otherwise) — config-driven via photoShape.
+      let scMax = scRange.max;
+      if (sticker?.photoMask && sticker?.zone === 'top_surface') {
+        const tier = canvasConfig.tiers[sticker.tierIndex] ?? canvasConfig.tiers[0];
+        scMax = Math.max(scRange.min + scRange.step, frameTopMaxScale(tierShape(tier), sticker.photoShape));
+      }
       groups.push({ key: 'sc', divider: true, panelLabel: 'Size', controls: [
-        <SizeDial key="sc-dial" size={sticker?.scale ?? 1} min={scRange.min} max={scRange.max} step={scRange.step}
+        <SizeDial key="sc-dial" size={sticker?.scale ?? 1} min={scRange.min} max={scMax} step={scRange.step}
           onChange={v => {
             // Multi-selection → set the same size on all selected (so a pattern's parts stay equal);
             // otherwise just this sticker.
