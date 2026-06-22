@@ -139,9 +139,8 @@ export default function PhotoSheet({ order, onClose }) {
         {/* Palette */}
         <div style={{ ...s.palette, ...(isMobile ? { width: '100%', borderRight: 'none', borderBottom: '1.5px solid #E8E4DC', flexShrink: 0, overflowY: 'visible' } : {}) }}>
           <div style={s.intro}>
-            <b>A4 print simulator.</b> Edible sugar sheets print on A4. Lay out the customer’s photos
-            at the exact size you’ll print, then download a print-ready PDF for your edible printer.
-            The sheet is shown to scale — drag a photo to move it, drag its corner to resize.
+            <b>A4 print simulator</b> (to scale). Lay the photos out at print size, then download a
+            print-ready PDF. Drag to move, drag a corner to resize.
           </div>
           <div style={s.paletteTitle}>Uploaded photos{frames.length ? ` (${frames.length})` : ''}</div>
           {frames.length === 0 && <div style={s.hint}>No customer photos in this order.</div>}
@@ -160,11 +159,8 @@ export default function PhotoSheet({ order, onClose }) {
           {loadErr && <div style={{ ...s.hint, color: '#c0392b', marginTop: 10 }}>Some images couldn’t load (check R2 CORS for this origin).</div>}
 
           <div style={s.guideBlock}>
-            <div style={s.paletteTitle}>Cake size guide</div>
-            <div style={{ fontSize: 11, color: '#8a7a80', lineHeight: 1.5, marginBottom: 8 }}>
-              Show a dotted circle for a cake top — drag a photo onto it to check the fit. Guides aren’t printed.
-            </div>
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <span style={{ ...s.paletteTitle, margin: 0 }}>Check size</span>
               <button onClick={() => setGuide(null)} style={{ ...s.guideBtn, ...(guide === null ? s.guideBtnOn : {}) }}>Off</button>
               {GUIDE_SIZES.map(d => (
                 <button key={d} onClick={() => setGuide(d)} style={{ ...s.guideBtn, ...(guide === d ? s.guideBtnOn : {}) }}>{d}″</button>
@@ -206,7 +202,7 @@ export default function PhotoSheet({ order, onClose }) {
                 position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)',
                 width: `${(guide / A4_WIDTH_IN) * 100}%`, aspectRatio: '1 / 1',
                 border: '2px dashed #b08968', borderRadius: '50%', pointerEvents: 'none',
-                display: 'flex', justifyContent: 'center',
+                display: 'flex', justifyContent: 'center', alignItems: 'flex-start',
               }}>
                 <span style={{ transform: 'translateY(-50%)', background: '#fff', padding: '0 6px', fontSize: 11, fontWeight: 700, color: '#b08968' }}>{guide}″ cake</span>
               </div>
