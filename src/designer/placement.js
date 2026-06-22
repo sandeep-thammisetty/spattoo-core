@@ -130,8 +130,11 @@ export function scaleRangeOf(element, dMin, dMax, dStep) {
 //   rect cake (any frame)     → grows to the nearest edge (inscribed; fills when shapes/aspect match)
 // `frameShape` is the authored placement_config.photo.shape ('round' | 'rect' | 'other'); anything
 // not 'round' is treated as a box (bounding-square) so hearts/stars inscribe rather than overhang.
-export function frameTopMaxScale(shp, frameShape, stickerSize = STICKER_SIZE) {
-  const h = stickerSize / 2;
+export function frameTopMaxScale(shp, frameShape, fill = 1, stickerSize = STICKER_SIZE) {
+  // `fill` = the shape's half-extent as a fraction of the plane half (measured from the mask at
+  // authoring time). Using it makes the SHAPE's edge — not the square plane — reach the boundary, so
+  // a mask with any transparent margin still grows exactly to the rim.
+  const h = (stickerSize / 2) * (fill > 0 ? fill : 1);
   let s;
   if (shp.kind === 'round') {
     s = frameShape === 'round' ? shp.radius / h : shp.radius / (h * Math.SQRT2);

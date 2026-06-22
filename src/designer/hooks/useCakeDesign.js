@@ -412,6 +412,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
           photoMask:      element.placement_config?.photo?.mask ?? null,
           photoOverlay:   element.placement_config?.photo?.overlay ?? null,   // optional decorative border art
           photoShape:     element.placement_config?.photo?.shape ?? null,     // 'round'|'rect'|'other' — top-fit max-size rule
+          photoFill:      element.placement_config?.photo?.fill ?? 1,         // shape extent as a fraction of the plane (measured) — exact fit-to-rim
           borderWidth:    element.placement_config?.photo?.border?.width ?? 0.06,  // thin default; 0 = no border
           photoUrl:       null,                       // customer upload (set at design time); distinct from imageUrl (the mask/shape)
           photoTransform: { x: 0, y: 0, zoom: 1 },    // pan (UV fraction) + zoom; cover-fit is the baseline at zoom 1

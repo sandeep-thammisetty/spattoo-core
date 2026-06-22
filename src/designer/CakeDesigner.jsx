@@ -3844,7 +3844,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       let scMax = scRange.max;
       if (sticker?.photoMask && sticker?.zone === 'top_surface') {
         const tier = canvasConfig.tiers[sticker.tierIndex] ?? canvasConfig.tiers[0];
-        scMax = Math.max(scRange.min + scRange.step, frameTopMaxScale(tierShape(tier), sticker.photoShape));
+        scMax = Math.max(scRange.min + scRange.step, frameTopMaxScale(tierShape(tier), sticker.photoShape, sticker.photoFill));
       }
       groups.push({ key: 'sc', divider: true, panelLabel: 'Size', controls: [
         <SizeDial key="sc-dial" size={sticker?.scale ?? 1} min={scRange.min} max={scMax} step={scRange.step}
