@@ -1583,10 +1583,13 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
       // The alternate piping GLB lives inside placement_config (not a column), so resolve
       // its R2 key to a full URL here too, the same way image_url is handled.
       let pc = r.placement_config;
-      if (pc && (pc.top_alt_glb_url || pc.bottom_alt_glb_url)) {
+      if (pc && (pc.top_alt_glb_url || pc.bottom_alt_glb_url || pc.photo?.mask)) {
         pc = { ...pc };
         if (pc.top_alt_glb_url)    pc.top_alt_glb_url    = resolveUrl(pc.top_alt_glb_url);
         if (pc.bottom_alt_glb_url) pc.bottom_alt_glb_url = resolveUrl(pc.bottom_alt_glb_url);
+        // Photo-frame window mask (nested asset key) → full URL, like image_url. Idempotent: the API
+        // already expands it, so resolveUrl(fullUrl) is a no-op; this covers the direct-Supabase path.
+        if (pc.photo?.mask)        pc.photo = { ...pc.photo, mask: resolveUrl(pc.photo.mask) };
       }
       return { ...r, image_url: resolveUrl(r.image_url), thumbnail_url: resolveUrl(r.thumbnail_url), placement_config: pc };
     });
