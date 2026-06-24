@@ -931,7 +931,7 @@ function StickerFace({ imageUrl, selected, color, groupColors, gradient, clipY, 
     // loading count (it draws nothing); a single canvas overlay shows ONE spinner for the
     // whole page (see loadingRegistry). Suspense clears the ping when the asset resolves
     // (cached assets resolve synchronously → never counted). Type/zone-agnostic.
-    <TextureErrorBoundary>
+    <TextureErrorBoundary screen="CakeCanvas">
       <Suspense fallback={<LoadingPing />}>
         {isGlb
           ? <StickerModel imageUrl={imageUrl} selected={selected} color={color} groupColors={groupColors} gradient={gradient} clipY={clipY} bendRadius={bendRadius} baseRotation={baseRotation} seatProud={seatProud} fondant={fondant} roughness={roughness} metalness={metalness} onSeat={onSeat} />

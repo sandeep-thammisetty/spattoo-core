@@ -142,7 +142,7 @@ export default function TopperPreview({ glbUrl, parts = null, placement = 'top',
         <PreviewCakeMeshes placed={placed} />
         {/* A failed decor texture/GLB (e.g. CORS-poisoned cache, 404) must not crash the whole
             preview Canvas — render the cake without the decor instead. */}
-        <TextureErrorBoundary>
+        <TextureErrorBoundary screen="TopperPreview">
           {parts && parts.length
             ? parts.map((pt, i) => (
                 <PreviewDecor key={i} glbUrl={pt.glbUrl} placement={placement} mode={mode} target={target} bottom={bottom} baseRotation={pt.baseRotation} offset={pt} />

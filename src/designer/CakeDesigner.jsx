@@ -1,5 +1,7 @@
 import { Suspense, useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
+import { ErrorBoundary } from '../telemetry/ErrorBoundary.jsx';
+import { setContext } from '../telemetry/index.js';
 import { HexColorPicker } from 'react-colorful';
 import CakeCanvas, { CakeThumbnailCanvas } from './canvas/CakeCanvas';
 import { cfImg } from './utils/imageUtils';
@@ -1072,7 +1074,7 @@ function AddUserModal({ onClose, brandBtn }) {
 
 // ── Cream piping inline section (per-tier, per-zone controls) ─────────────────
 // ── Main designer ─────────────────────────────────────────────────────────────
-export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'cake-thumbnails', onOrder, onSaveTemplate, cfAssetsBase }) {
+function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbnails', onOrder, onSaveTemplate, cfAssetsBase }) {
   const { design, setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierGradient, setTierCornerR, addPipingLayer, updatePipingLayer, removePipingLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, setWriting, clearWriting, addStroke, removeStroke, clearPiping, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
   const [elementsOpen, setElementsOpen] = useState(false);
   const [toolsOpen, setToolsOpen]   = useState(false);
@@ -1296,6 +1298,13 @@ export default function CakeDesigner({ apiClient, supabase, thumbnailBucket = 'c
       setBakerReady(true);
     });
   }, [supabase, apiClient]);
+
+  // Tag telemetry with baker context so every error report (boundary, texture,
+  // global handler) carries baker_id. The host app sets `surface`; the customer
+  // path attaches customer_id from the storefront/order flow.
+  useEffect(() => {
+    if (bakerData?.id) setContext({ bakerId: bakerData.id });
+  }, [bakerData]);
 
   useEffect(() => {
     function onMouseDown(e) {
@@ -6183,3 +6192,13 @@ const s = {
     zIndex: 20,
   },
 };
+
+// Wrap the designer in a reporting error boundary so a render crash surfaces to
+// telemetry (with baker context) and shows a fallback instead of white-screening.
+export default function CakeDesigner(props) {
+  return (
+    <ErrorBoundary screen="CakeDesigner">
+      <CakeDesignerInner {...props} />
+    </ErrorBoundary>
+  );
+}

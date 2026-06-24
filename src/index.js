@@ -23,3 +23,8 @@ export { buildStyledWall, displaceByHeightField, makeWallReliefSampler } from '.
 export { buildDripGeometry, buildDripWeb, DRIP_DEFAULTS, DRIP_WEB_OVERLAP } from './designer/geometry/chocolateDrip.js';
 export { getRusticNormalMap } from './designer/shared/textures/rusticTexture.js';
 export { normalMapFromImage, loadNormalMapFromUrl, loadStrokeMaps, composeStrokeTile, heightFieldFromImage, heightTextureFromField, normalTextureFromField } from './designer/shared/textures/imageNormalMap.js';
+// Vendor-neutral error telemetry. Host apps inject a Sentry-backed transport via
+// configureTelemetry(); until then it logs to the console. See src/telemetry/.
+export { reportError, reportMessage, setContext, configureTelemetry } from './telemetry/index.js';
+export { ErrorBoundary } from './telemetry/ErrorBoundary.jsx';
+export { installGlobalHandlers } from './telemetry/globalHandlers.js';
