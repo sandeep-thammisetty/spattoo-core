@@ -77,6 +77,33 @@ down, now 1.8%) · `vitest` (placement + sphere-packing contract tests).
 8. **Incremental type safety** — `// @ts-check` + JSDoc on shared helpers (`placement.js`,
    `geometry/`, the new `utils/`); a longer-term investment, not a near-term gate.
 
+## Gate dashboard / observability (TO IMPLEMENT)
+Today the gates run **locally only** (`npm run verify` + the pre-commit hook) — results aren't
+collected or viewable anywhere. Two needs: a **per-run view** ("what did the gates flag on this
+commit, in one place") and a **trend view** ("is duplication / lint debt / coverage improving over
+time"). Build it as a ladder; fold Rung 1 into Phase 0.
+
+- **Rung 1 — Local aggregated report (`npm run report`), no infra:** run every gate with
+  machine-readable + HTML output into a `reports/` dir and open a combined index.
+  - ESLint → `--format html` (or json)
+  - jscpd → `"reporters": ["html"]` (interactive clone explorer)
+  - Vitest → `--reporter=json` (or `vitest --ui` for the live test dashboard)
+  - Bundle → `rollup-plugin-visualizer` / `vite-bundle-visualizer` treemap of the build
+  - Pros: zero infra, private, instant. Cons: local-only, no history.
+- **Rung 2 — GitHub Actions (the repo is already on GitHub):** run `verify` on push/PR and surface
+  results where the code lives — a **Job Summary** markdown table (ESLint count, jscpd %, tests
+  pass/fail, bundle size), **inline PR annotations** on the diff, the Rung 1 HTML reports as
+  **artifacts**, and a README **badge**. Free, persists per-run, no third party. Core has no CI yet,
+  so this is new (lightweight) infra.
+- **Rung 3 — Hosted quality platform (trend dashboard), defer:** SonarCloud / self-hosted SonarQube
+  ingests ESLint + coverage + its own duplication/complexity → persistent web dashboard with
+  **trend lines** and quality-gate status. ⚠️ Third party ingesting source/metrics; **free only for
+  public repos**, paid for private (this repo is private) — self-host to keep data in-house. Adopt
+  only if long-term trend charts are wanted and the cost / data-sharing is acceptable.
+
+**Recommendation:** Rung 1 now (one command, no accounts), Rung 2 soon (persistent + visible without
+paying or sharing code); defer Rung 3 unless trend history is specifically needed.
+
 ## Track record (context for the ratchet)
 DRY pass already shipped 6 shared helpers, duplication 2.82% → 1.73%, jscpd gate live and ratcheting:
 `heightfieldToNormalMap`, `makeValueNoise`, `mulberry32` (`utils/random.js`), `tierAbove`/
