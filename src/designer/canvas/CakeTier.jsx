@@ -6,7 +6,7 @@ import { getCreamGrainNormalMap, getWhippedFoamNormalMap } from '../shared/textu
 import { getFondantNormalMap } from '../shared/textures/fondantTexture.js';
 import { getRusticNormalMap } from '../shared/textures/rusticTexture.js';
 import { getWeaveNormalMap, weaveTiles } from '../shared/textures/weaveStencilTexture.js';
-import { makeLusterDustMaps } from '../shared/textures/lusterDust.js';
+import { makeParticleFinishMaps } from '../shared/textures/particleFinish.js';
 import { frostingDef, frostingSupportsGradient, frostingAllowsStyles, DEFAULT_FROSTING, FROSTINGS } from '../frostings.js';
 import { styleDef, resolveStyleParams, DEFAULT_STYLE } from '../creamStyles.js';
 import { buildStyledWall } from '../geometry/creamWall.js';
