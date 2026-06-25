@@ -257,11 +257,11 @@ function WritingColourPicker({ writing, design, setWriting, width = 208 }) {
 function PenSlider({ label, value, min, max, step, onChange, fmt = v => v }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-      <span style={{ fontSize: 11, fontWeight: 700, color: '#555', minWidth: 64 }}>{label}</span>
+      <span style={{ fontSize: 11, fontWeight: 700, color: '#555', minWidth: 56, flexShrink: 0 }}>{label}</span>
       <input type="range" min={min} max={max} step={step} value={value}
         onChange={e => onChange(Number(e.target.value))}
-        style={{ flex: 1, accentColor: '#1a1a1a' }} />
-      <span style={{ fontSize: 11, fontWeight: 700, color: '#1a1a1a', minWidth: 34, textAlign: 'right' }}>{fmt(value)}</span>
+        style={{ flex: 1, minWidth: 0, accentColor: '#1a1a1a' }} />
+      <span style={{ fontSize: 11, fontWeight: 700, color: '#1a1a1a', minWidth: 32, flexShrink: 0, textAlign: 'right' }}>{fmt(value)}</span>
     </div>
   );
 }
@@ -1084,8 +1084,6 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const [dustColor, setDustColor] = useState('#f0cf63');
   const [dustTier, setDustTier] = useState(0);
   const [dustSel, setDustSel] = useState(0);
-  // TEMP Phase-A fixture: which tier the second-cream dev panel edits (real entry = admin element, step 3).
-  const [devTier, setDevTier] = useState(0);
   // Phase B: live spin-paint. creamPaint = the layer currently being scraped; creamAutoRotate spins the cake.
   const [creamPaint, setCreamPaint] = useState(null);   // { tierIndex, layerId } | null
   const [creamAutoRotate, setCreamAutoRotate] = useState(false);
@@ -4496,7 +4494,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               sheet grew upward over the cake as its controls expanded; a right popup scrolls
               within a fixed column, consistent with the piping/edit popups. */}
           <div style={{ ...s.flyout, left: 'auto', right: 10, top: 12, bottom: 'auto',
-            width: isMobile ? 236 : 256, margin: 0, borderRadius: 16,
+            width: isMobile ? 252 : 272, margin: 0, borderRadius: 16,
             maxHeight: 'min(calc(100% - 24px), calc(100vh - 96px))' }}>
             <div style={s.flyoutHeader}>
               <span style={s.flyoutTitle}>{activeTool === 'luster-dust' ? 'Luster Dust' : 'Cream Pen'}</span>
@@ -4589,10 +4587,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                         </div>
                       )}
 
-                      {/* Fleck size applies to the whole dusting on this tier, not one flick. */}
+                      {/* Density / Fleck size / Glow apply to the whole dusting on this tier, not one flick. */}
                       <div style={{ marginTop: 8 }}>
-                        <PenSlider label="Fleck size" value={design.tiers[dustTier]?.dusting?.fleckSize ?? 4} min={1.5} max={9} step={0.5}
-                          onChange={v => updateDusting(dustTier, { fleckSize: v })} fmt={v => v.toFixed(1)} />
+                        <PenSlider label="Density"    value={design.tiers[dustTier]?.dusting?.density   ?? 2} min={1}   max={8} step={1}   onChange={v => updateDusting(dustTier, { density: v })}   fmt={v => `${Math.round(v)}`} />
+                        <PenSlider label="Fleck size" value={design.tiers[dustTier]?.dusting?.fleckSize ?? 4} min={1.5} max={9} step={0.5} onChange={v => updateDusting(dustTier, { fleckSize: v })} fmt={v => v.toFixed(1)} />
+                        <PenSlider label="Glow"       value={design.tiers[dustTier]?.dusting?.glow      ?? 0} min={0}   max={0.6} step={0.05} onChange={v => updateDusting(dustTier, { glow: v })}      fmt={v => v.toFixed(2)} />
                       </div>
                     </>
                   )}
@@ -4750,81 +4749,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               visible beside it (the Canvas is absolute inset:0 of this div). On mobile the element
               stack does NOT shrink the canvas — it's a translucent overlay, so the cake stays
               full-width and centred UNDER the popup (you see it through the frosted cards). */}
-          <div style={{ position: 'absolute', inset: 0, right: toolsOpen ? (isMobile ? 248 : 276) : (elementStackOpen ? (isMobile ? 0 : 220) : 0), transition: 'right 0.18s ease' }}>
-          {/* ───────── TEMP Phase-A fixture: Second Cream Layer dev panel ─────────
-              Drives the full model (reducers → state → render) before the real card +
-              admin element exist (step 3) and live spin-paint (Phase B). REMOVE then. */}
-          {(() => {
-            const tCount = design.tiers.length;
-            const dt = Math.min(devTier, tCount - 1);
-            const layers = design.tiers[dt]?.creamLayers ?? [];
-            const up = (id, fn) => updateCreamLayer(dt, id, fn);
-            const P = { wrap: { position: 'fixed', left: 12, bottom: 12, width: 244, maxHeight: '70vh', overflowY: 'auto', background: 'rgba(255,255,255,0.96)', border: '1.5px solid #C5D4C8', borderRadius: 12, padding: 12, font: '12px/1.4 Quicksand, sans-serif', color: '#2C4433', zIndex: 300, boxShadow: '0 6px 24px rgba(44,68,51,0.18)' },
-              row: { display: 'flex', alignItems: 'center', gap: 6, margin: '4px 0' },
-              btn: { padding: '5px 8px', borderRadius: 7, border: '1px solid #C5D4C8', background: '#fff', fontWeight: 700, fontSize: 11, cursor: 'pointer', color: '#2C4433' },
-              prim: { padding: '7px 10px', borderRadius: 7, border: 'none', background: '#3D5A44', color: '#fff', fontWeight: 700, fontSize: 12, cursor: 'pointer', width: '100%' } };
-            return (
-              <div style={P.wrap}>
-                <div style={{ fontWeight: 800, marginBottom: 6 }}>Second Layer · dev</div>
-                <div style={P.row}>
-                  <span>Tier</span>
-                  {design.tiers.map((_, i) => (
-                    <button key={i} style={{ ...P.btn, ...(i === dt ? { background: '#EEF4EF', borderColor: '#3D5A44' } : {}) }} onClick={() => setDevTier(i)}>{i + 1}</button>
-                  ))}
-                </div>
-                <button style={P.prim} onClick={() => addCreamLayer(dt)}>+ Add layer</button>
-                <label style={{ ...P.row, marginTop: 6 }}>
-                  <input type="checkbox" checked={creamAutoRotate} onChange={e => setCreamAutoRotate(e.target.checked)} />
-                  Auto-rotate (spin to paint)
-                </label>
-                {layers.length === 0 && <div style={{ color: '#9BB5A2', marginTop: 8 }}>No layers on this tier yet.</div>}
-                {layers.map((l, idx) => (
-                  <div key={l.layerId} style={{ borderTop: '1px solid #E3EAE5', marginTop: 8, paddingTop: 8 }}>
-                    <div style={{ ...P.row, justifyContent: 'space-between' }}>
-                      <strong>Layer {idx + 1}</strong>
-                      <span>
-                        {(() => {
-                          const painting = creamPaint?.tierIndex === dt && creamPaint?.layerId === l.layerId;
-                          return (
-                            <button style={{ ...P.btn, ...(painting ? { background: '#3D5A44', color: '#fff', borderColor: '#3D5A44' } : {}) }}
-                              title="Scrape the torn edge on the cake (turn on Auto-rotate to go all the way around)"
-                              onClick={() => setCreamPaint(painting ? null : { tierIndex: dt, layerId: l.layerId })}>
-                              {painting ? 'painting…' : 'paint'}
-                            </button>
-                          );
-                        })()}{' '}
-                        <button style={P.btn} title="Duplicate (stacks another layer)" onClick={() => duplicateCreamLayer(dt, l.layerId)}>dup</button>{' '}
-                        <button style={{ ...P.btn, color: '#C0392B' }} onClick={() => { if (creamPaint?.layerId === l.layerId) setCreamPaint(null); removeCreamLayer(dt, l.layerId); }}>✕</button>
-                      </span>
-                    </div>
-                    <div style={P.row}>
-                      <span>Colour</span>
-                      <input type="color" value={l.color} onChange={e => up(l.layerId, x => ({ ...x, color: e.target.value }))} />
-                      <span style={{ flex: 1 }} />
-                      <button style={{ ...P.btn, ...(l.fillSide === 'below' ? { background: '#EEF4EF', borderColor: '#3D5A44' } : {}) }} onClick={() => up(l.layerId, x => ({ ...x, fillSide: 'below' }))}>below</button>
-                      <button style={{ ...P.btn, ...(l.fillSide === 'above' ? { background: '#EEF4EF', borderColor: '#3D5A44' } : {}) }} onClick={() => up(l.layerId, x => ({ ...x, fillSide: 'above' }))}>above</button>
-                    </div>
-                    <div style={P.row}><span style={{ width: 40 }}>Lift</span>
-                      <input type="range" min={0} max={0.12} step={0.005} value={l.lift} onChange={e => up(l.layerId, x => ({ ...x, lift: +e.target.value }))} style={{ flex: 1 }} /></div>
-                    <div style={P.row}><span style={{ width: 40 }}>Torn</span>
-                      <input type="range" min={0} max={0.18} step={0.005} value={l.noise} onChange={e => up(l.layerId, x => ({ ...x, noise: +e.target.value }))} style={{ flex: 1 }} /></div>
-                    <div style={P.row}>
-                      {Object.keys(SECOND_CREAM_PRESETS).map(name => (
-                        <button key={name} style={P.btn} onClick={() => up(l.layerId, x => ({ ...x, edge: SECOND_CREAM_PRESETS[name]() }))}>{name.split(' ')[0]}</button>
-                      ))}
-                    </div>
-                    <div style={P.row}>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                        <input type="checkbox" checked={!!l.gold?.on} onChange={e => up(l.layerId, x => ({ ...x, gold: { ...(x.gold ?? {}), on: e.target.checked } }))} />
-                        Gold edge
-                      </label>
-                      {l.gold?.on && <input type="color" value={l.gold?.color ?? '#c89b3c'} onChange={e => up(l.layerId, x => ({ ...x, gold: { ...(x.gold ?? {}), color: e.target.value } }))} />}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            );
-          })()}
+          <div style={{ position: 'absolute', inset: 0, right: toolsOpen ? (isMobile ? 0 : 276) : (elementStackOpen ? (isMobile ? 0 : 220) : 0), transition: 'right 0.18s ease' }}>
           <Suspense fallback={<CakeSpinnerFill label="Loading 3D cake…" />}>
             <CakeCanvas
               config={canvasConfig}
@@ -6011,7 +5936,11 @@ const s = {
   main: { flex: 1, display: 'flex', minHeight: 0, position: 'relative' },
   flyout: {
     position: 'absolute', left: 76, top: 0, bottom: 0, zIndex: 20,
-    width: 200, background: '#fff',
+    width: 200,
+    // Frosted/see-through so the cake shows through (esp. on mobile, where it overlays the cake). The
+    // low alpha is what actually reveals the cake — 0.97 reads as solid white even with the blur.
+    background: 'rgba(255,255,255,0.6)',
+    backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)',
     borderRadius: '0 16px 16px 0',
     display: 'flex', flexDirection: 'column',
     padding: '12px 10px', gap: 10,
@@ -6315,9 +6244,9 @@ const s = {
     position: 'absolute',
     right: 10, top: 12,
     width: 200, maxHeight: 'min(calc(100% - 24px), calc(100vh - 96px))',
-    background: 'rgba(255,255,255,0.97)',
-    backdropFilter: 'blur(18px)',
-    WebkitBackdropFilter: 'blur(18px)',
+    background: 'rgba(255,255,255,0.72)',
+    backdropFilter: 'blur(16px)',
+    WebkitBackdropFilter: 'blur(16px)',
     borderRadius: 16,
     padding: '8px 8px 10px',
     boxShadow: '0 4px 24px rgba(107,45,66,0.18)',

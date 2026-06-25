@@ -1,55 +1,45 @@
-import { useMemo, useRef } from 'react';
+import { useRef } from 'react';
 import { useThree } from '@react-three/fiber';
 import * as THREE from 'three';
-import { buildCreamWriting } from '../geometry/creamText.js';
+import { Text3D, Center } from '@react-three/drei';
+import helvetikerBold from 'three/examples/fonts/helvetiker_bold.typeface.json';
 import { topClamp } from '../geometry/surface.js';
 import { pointerRay, planeHit } from '../utils/raycasting.js';
-import { goldMaterialProps, silverMaterialProps, GOLD_FINISH_COLOR, SILVER_FINISH_COLOR } from './CakeTier.jsx';
 
 const DEG = Math.PI / 180;
-const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
-// One gold balloon-number standing UPRIGHT on the cake top — the "age candle" decoration.
-// Reuses the cream tube-sweep geometry (a fat round tube on a single-stroke digit reads as a
-// metallic number) + the gold material; unlike CreamWriting it is NOT laid flat — the XY glyph
-// plane stays vertical (facing the camera), base seated on the top surface. Dragged on the top
-// plane like the cream writing / top stickers (grab disables orbit; a no-move press = tap → select).
+// A flat, BEVELLED gold number standing upright on the cake top — the "number candle" look
+// (extruded face + chamfered bevel that catches the light), NOT a balloon. Reuses the same Text3D
+// beveled engine as the Texts decoration; only the material (warm metallic gold/silver) and the
+// upright top-surface placement differ. Dragged on the top plane (grab disables orbit; a no-move
+// press = tap → select).
+//
+// Material: Text3D exposes two material slots — index 0 = front/back faces, index 1 = side+bevel.
+// A satin warm-gold face + a slightly darker, shinier side/bevel reads as a metal candle number.
+const FINISHES = {
+  gold:   { face: '#c9a23f', side: '#a07c2c', emissive: '#2a1c04' },
+  silver: { face: '#cdd2d8', side: '#9aa0a8', emissive: '#202428' },
+};
+
 export default function AgeNumber({
-  age, topY, topRadius, shape = 'round', width = 0, depth = 0, shp,
+  age, topY, shape = 'round', shp,
   onClick, onMove, onOrbitEnable, selected = false,
 }) {
   const { camera, gl } = useThree();
-  const isRect    = shape === 'rect';
-  const size      = age?.size ?? 0.95;          // standing height (world units)
-  const thickness = age?.thickness ?? 0.085;    // tube radius (balloon chunkiness)
-  const value     = String(age?.value ?? '').replace(/[^0-9]/g, '');   // digits only
-
-  // Footprint: height = size, width allowed to grow with digit count (uniform scale fits within).
-  const maxH = size;
-  const maxW = size * Math.max(1, value.length) * 1.4;
-
-  const geo = useMemo(() => {
-    if (!value) return null;
-    return buildCreamWriting({ text: value, font: age.font, thickness, maxW, maxH, curve: 0, wrapRadius: 0 });
-  }, [value, age?.font, thickness, maxW, maxH]);
-
+  const size  = age?.size ?? 0.95;                                   // standing height (world units)
+  const value = String(age?.value ?? '').replace(/[^0-9]/g, '');    // digits only
+  const fin   = FINISHES[age?.finish] ?? FINISHES.gold;
   const pressedRef = useRef(false);
-  if (!geo) return null;
 
-  const isSilver = age.finish === 'silver';
-  const metalProps = isSilver ? silverMaterialProps(SILVER_FINISH_COLOR) : goldMaterialProps(GOLD_FINISH_COLOR);
-  // Metal finishes carry a constant warm/cool glow so they read as metal without a strong env map,
-  // and brighten when selected (mirrors CreamWriting's gold/silver treatment).
-  const emissive = isSilver ? '#23272d' : '#3a2a05';
-  const emissiveIntensity = selected ? 0.6 : 0.4;
+  if (!value) return null;
 
   const yaw = (age.yaw ?? 0) * DEG;
   const ox  = age.offsetX ?? 0;
   const oz  = age.offsetZ ?? 0;
 
-  const bb = geo.boundingBox;
-  const grabW = Math.max((bb.max.x - bb.min.x) + thickness * 3, thickness * 4);
-  const grabH = Math.max((bb.max.y - bb.min.y) + thickness * 3, thickness * 4);
+  // Approximate footprint for the grab plane (Text3D is auto-centred by <Center>).
+  const numW = value.length * size * 0.7;
+  const numH = size * 0.72;   // cap height for helvetiker bold
 
   const onDown = e => {
     e.stopPropagation();
@@ -88,20 +78,39 @@ export default function AgeNumber({
     onClick: e => e.stopPropagation(),
   };
 
-  // Stand upright: the XY glyph plane stays vertical (facing +Z). Seat the digits' base on the top
-  // surface by lifting the centred geometry up by its lowest point. yaw spins it about the up axis.
+  const matProps = (color) => ({
+    color, metalness: 0.95, roughness: 0.32,
+    clearcoat: 0.5, clearcoatRoughness: 0.18, envMapIntensity: 1.0,
+    emissive: fin.emissive, emissiveIntensity: selected ? 0.45 : 0.28,
+  });
+
+  // Stand upright on the top surface: <Center disableY> centres X & Z but keeps the baseline at
+  // y=0, so seating the group at topY lands the digits' base on the cake top. yaw spins it.
   return (
-    <group position={[ox, topY, oz]} rotation={[0, yaw, 0]}>
-      <group position={[0, -bb.min.y, 0]}>
-        <mesh geometry={geo} castShadow>
-          <meshPhysicalMaterial {...metalProps} emissive={emissive} emissiveIntensity={emissiveIntensity} />
-        </mesh>
-        {/* upright grab plane just in front of the number */}
-        <mesh position={[0, (bb.min.y + bb.max.y) / 2, bb.max.z + 0.01]} {...grabProps}>
-          <planeGeometry args={[grabW, grabH]} />
-          <meshBasicMaterial transparent opacity={0} depthWrite={false} />
-        </mesh>
-      </group>
+    <group position={[ox, topY + 0.01, oz]} rotation={[0, yaw, 0]}>
+      <Center disableY>
+        <Text3D
+          key={`${value}-${age.finish}`}
+          font={helvetikerBold}
+          size={size}
+          height={size * 0.34}
+          curveSegments={12}
+          bevelEnabled
+          bevelThickness={size * 0.07}
+          bevelSize={size * 0.05}
+          bevelOffset={0}
+          bevelSegments={6}
+        >
+          {value}
+          <meshPhysicalMaterial attach="material-0" {...matProps(fin.face)} />
+          <meshPhysicalMaterial attach="material-1" {...matProps(fin.side)} />
+        </Text3D>
+      </Center>
+      {/* upright grab plane just in front of the number */}
+      <mesh position={[0, numH / 2, size * 0.22]} {...grabProps}>
+        <planeGeometry args={[numW + size * 0.3, numH + size * 0.3]} />
+        <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+      </mesh>
     </group>
   );
 }
