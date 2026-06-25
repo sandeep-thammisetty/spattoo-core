@@ -20,7 +20,7 @@
     "check:paths": "node scripts/check-paths.mjs",
     "check:dup": "jscpd src/designer",
     "test": "vitest run",
-    "verify": "npm run check:paths && npm test"
+    "verify": "npm run check:paths && npm run check:dup && npm test"
   },
   "peerDependencies": {
     "@react-three/drei": ">=9",
