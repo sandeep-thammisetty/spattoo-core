@@ -215,3 +215,23 @@ export function placementSlots(element, tierCount) {
   }
   return slots;
 }
+
+// ── Tier stacking ───────────────────────────────────────────────────────────────────────────────
+// Tiers are a concentric stack, index 0 = bottom, each higher index resting ON the one below. These
+// are the SINGLE source for "what sits on this tier" — used by rim-ring room/offset limits AND by
+// top-surface finish placement (gold leaf), so the occlusion rule lives in one place, not copied per
+// element. Any future decor on a lower tier's top should read occludedTopFrac, not re-derive it.
+
+// The tier resting directly on top of tier `i` (one step up the stack), or null if `i` is the top.
+export function tierAbove(tiers, i) {
+  return tiers?.[i + 1] ?? null;
+}
+
+// Fraction of tier `i`'s top RADIUS hidden under the tier resting on it (0 = nothing above, or the
+// upper tier isn't smaller → whole top visible). The VISIBLE top is the ring [occludedTopFrac, 1];
+// anything inside it tucks under the upper tier and never shows.
+export function occludedTopFrac(tiers, i) {
+  const r = tiers?.[i]?.radius ?? 0;
+  const up = tierAbove(tiers, i)?.radius ?? 0;
+  return (r > 0 && up && up < r) ? up / r : 0;
+}

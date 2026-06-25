@@ -9,7 +9,7 @@ import { CAMERA_POSITION, CAMERA_POSITION_MOBILE, PIPING_FRONT_ANGLE, TIER_RADII
 import PipingPreview from './canvas/PipingPreview.jsx';
 import TopperPreview from './canvas/TopperPreview.jsx';
 import { CakeSpinner, CakeSpinnerFill, DecorLoadingOverlay } from './canvas/CakeSpinner.jsx';
-import { isSinglePerSlot, placementSlots, isDynamicHug, facingOffsetRadians, scaleRangeOf, frameTopMaxScale, frameSideMaxScale, DEFAULT_FOLD_DEG, edgeSeatSeed } from './placement.js';
+import { isSinglePerSlot, placementSlots, isDynamicHug, facingOffsetRadians, scaleRangeOf, frameTopMaxScale, frameSideMaxScale, DEFAULT_FOLD_DEG, edgeSeatSeed, tierAbove, occludedTopFrac } from './placement.js';
 import { tierShape } from './geometry/surface.js';
 import { packCluster, clusterRadii, manualSeat } from './geometry/spherePacking.js';
 import { finishToMaterial, finishOf } from './geometry/finish.js';
@@ -1127,9 +1127,11 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     const pc = foilElement?.placement_config ?? {};
     let u, v;
     if (surface === 'top_surface') {
-      // Spread shards around the top disk at mid radii (not stacked on the centre, not at the rim edge).
+      // Spread shards around the VISIBLE top ring (outside the footprint of the tier above), so a lower
+      // tier's flakes never land under the upper tier. occludedTopFrac is the shared stacking helper.
+      const lo = Math.min(0.9, occludedTopFrac(canvasConfig.tiers, tierIndex) + 0.06), hi = 0.95;
       u = (count * 0.37) % 1;                          // around the disk
-      v = 0.30 + ((count * 0.23) % 1) * 0.40;          // radial fraction ~0.30 .. 0.70
+      v = lo + ((count * 0.23) % 1) * (hi - lo);       // radial fraction within the visible ring
     } else {
       // Side wall: land at the FRONT (u≈0, default camera view), spread in a small front cluster.
       u = ((((count * 0.37) % 1) - 0.5) * 0.16 + 1) % 1;   // ~±0.08 around the front
@@ -1817,7 +1819,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     const radius    = canvasConfig.tiers[tierIndex]?.radius ?? 0.35;
     const half      = pipingRingRadialWidth(tierIndex, 1) / 2;
     const innerEdge = (radius - half + nextRimRadialOffset(tierIndex)) - half;
-    const upper     = canvasConfig.tiers[tierIndex + 1];   // tier resting on this rim, if any
+    const upper     = tierAbove(canvasConfig.tiers, tierIndex);   // tier resting on this rim, if any
     return innerEdge >= (upper ? upper.radius : 0);
   }
   // EXACT radial band [innerEdge, outerEdge] (distance from the tier centre) a rim ring's VISIBLE
@@ -1944,7 +1946,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     // cylinder of the tier above, or the next ring in.
     let outerMax = radius;            // rim edge
     let outerMin = depth;             // inner edge ≥ cake centre (0)
-    const upper = canvasConfig.tiers[tierIndex + 1];
+    const upper = tierAbove(canvasConfig.tiers, tierIndex);
     if (upper) outerMin = Math.max(outerMin, upper.radius + depth);   // inner edge ≥ upper cylinder
     const curCenter = (curIn + curOut) / 2;
     (design.tiers[tierIndex]?.topPipings ?? []).forEach(p => {

@@ -21,7 +21,7 @@ import { pointerRay, cylinderHit, cylinderHitPoint, planeHit, buildRay } from '.
 import { getFondantNormalMap, applyBoxUVs } from '../shared/textures/fondantTexture.js';
 import { tierShape, topClamp, topClampInset, topContains, boxHit, nearestU, rectSidePlacement, perimeter, snapToRim } from '../geometry/surface.js';
 import { manualSeat } from '../geometry/spherePacking.js';
-import { hugScale, isDynamicHug, wallClampY, frameTopMaxScale, frameSideMaxScale, DEFAULT_HUG_FILL, DEFAULT_FOLD_DEG, DEFAULT_SPINE } from '../placement.js';
+import { hugScale, isDynamicHug, wallClampY, frameTopMaxScale, frameSideMaxScale, DEFAULT_HUG_FILL, DEFAULT_FOLD_DEG, DEFAULT_SPINE, occludedTopFrac } from '../placement.js';
 import { recolorImageData } from '../shared/color/imageRecolor.js';
 import { applyGradient } from '../shared/color/gradientMaterial.js';
 import { styleDef, resolveStyleParams } from '../creamStyles.js';
@@ -1565,6 +1565,10 @@ function CakeScene({
     stackY += tier.height;
     return { ...tier, baseY };
   });
+  // Fraction of each tier's top hidden under the tier resting on it — top-surface finish handles clamp
+  // to the visible ring [topInnerFrac, 1] so a flake can't be dragged under the upper tier (shared
+  // stacking helper, same rule the rim-ring limits use).
+  tierData.forEach((td, i) => { td.topInnerFrac = occludedTopFrac(tierData, i); });
   tierDataRef.current = tierData;
 
   const bottomTier = tierData[0];

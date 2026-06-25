@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isSinglePerSlot, placementSlots, hugScale, isDynamicHug, wallClampY, DEFAULT_HUG_FILL, facingOffsetRadians, degToRad3, radToDeg3, scaleRangeOf } from './placement.js';
+import { isSinglePerSlot, placementSlots, hugScale, isDynamicHug, wallClampY, DEFAULT_HUG_FILL, facingOffsetRadians, degToRad3, radToDeg3, scaleRangeOf, tierAbove, occludedTopFrac } from './placement.js';
 
 // Contract: every element type flows through the SAME placement logic. These fixtures stand in
 // for the real types; if a type ever diverges, a shared assertion here breaks. Guards the exact
@@ -49,6 +49,24 @@ describe('hugScale — side-hug size tracks the tier WALL HEIGHT, not r', () => 
   it('does NOT depend on placement_config.r (absolute scale is stand-only)', () => {
     // Same wall → same hug size regardless of any r the element carries.
     expect(hugScale(1.0, STICKER_SIZE)).toBe(hugScale(1.0, STICKER_SIZE));
+  });
+});
+
+describe('tier stacking — ONE occlusion rule (rim rings AND top-surface finishes share it)', () => {
+  // index 0 = bottom; each higher index rests on the one below (concentric, tapering up).
+  const tiers = [{ radius: 2 }, { radius: 1 }, { radius: 0.5 }];
+  it('tierAbove returns the tier resting on top, null at the top', () => {
+    expect(tierAbove(tiers, 0)).toBe(tiers[1]);
+    expect(tierAbove(tiers, 2)).toBe(null);
+    expect(tierAbove(undefined, 0)).toBe(null);
+  });
+  it('occludedTopFrac = upper radius / this radius (the hidden centre)', () => {
+    expect(occludedTopFrac(tiers, 0)).toBe(0.5);   // 1 / 2
+    expect(occludedTopFrac(tiers, 1)).toBe(0.5);   // 0.5 / 1
+  });
+  it('top tier and a non-smaller upper tier are fully visible (frac 0)', () => {
+    expect(occludedTopFrac(tiers, 2)).toBe(0);                       // nothing above the top tier
+    expect(occludedTopFrac([{ radius: 1 }, { radius: 1 }], 0)).toBe(0); // upper not smaller → no occlusion
   });
 });
 

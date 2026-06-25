@@ -47,7 +47,8 @@ export default function FinishHandles({
       const R = ud.radius || 1;
       const lx = hit.point.x, lz = hit.point.z;
       const u = (Math.atan2(lx, lz) / TAU + 1) % 1;
-      const v = Math.min(1, Math.sqrt(lx * lx + lz * lz) / R);
+      // Clamp to the visible ring [innerFrac, ~rim] so a flake can't be dragged under the upper tier.
+      const v = Math.min(0.985, Math.max(ud.innerFrac ?? 0, Math.sqrt(lx * lx + lz * lz) / R));
       return { u, v, tier: ud.tierIndex, surface };
     }
     return hit.uv ? { u: hit.uv.x, v: hit.uv.y, tier: ud.tierIndex, surface } : null;
@@ -102,7 +103,7 @@ export default function FinishHandles({
                 this tier has top flakes (a disk over every tier would block the wall catcher otherwise). */}
             {hasTop && (
               <mesh position={[0, topY + 0.03, 0]} rotation={[-Math.PI / 2, 0, 0]}
-                userData={{ [catcherFlag]: true, surface: 'top_surface', tierIndex: ti, radius: R }}>
+                userData={{ [catcherFlag]: true, surface: 'top_surface', tierIndex: ti, radius: R, innerFrac: t.topInnerFrac ?? 0 }}>
                 <circleGeometry args={[R * 1.012, 64]} />
                 <meshBasicMaterial transparent opacity={0} depthWrite={false} side={THREE.DoubleSide} />
               </mesh>
