@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { heightfieldToNormalMap } from './heightfieldNormal.js';
+import { makeValueNoise } from './valueNoise.js';
 
 // Shared FONDANT surface — one procedurally-built, tileable, colour-agnostic NORMAL map reused by
 // every element flagged `placement_config.useSharedFondantTexture`. It adds the soft sugar-paste
@@ -11,23 +12,10 @@ let _normalMap = null;
 // Smooth value-noise height field → Sobel → tangent-space normal map (RGB), wrap-tiled so box-UVs
 // can repeat it without visible seams at grain scale.
 function buildFondantNormalMap(size = 256, strength = 0.6) {
-  // tileable value noise: a small lattice of random heights, wrapped, bilinearly sampled + a finer
-  // octave, so the result tiles seamlessly (lattice indices taken modulo the lattice size).
-  const L = 16; // lattice cells across the texture (keeps it seamless on repeat)
-  const rand = new Float32Array(L * L);
-  // deterministic pseudo-random (no Math.random — keeps the build reproducible)
-  let s = 1234567;
-  const next = () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff; };
-  for (let i = 0; i < L * L; i++) rand[i] = next();
-  const latt = (xi, yi) => rand[((yi % L + L) % L) * L + ((xi % L + L) % L)];
-  const smooth = t => t * t * (3 - 2 * t);
-  const noise = (x, y) => {
-    const xi = Math.floor(x), yi = Math.floor(y);
-    const tx = smooth(x - xi), ty = smooth(y - yi);
-    const a = latt(xi, yi),     b = latt(xi + 1, yi);
-    const c = latt(xi, yi + 1), d = latt(xi + 1, yi + 1);
-    return (a * (1 - tx) + b * tx) * (1 - ty) + (c * (1 - tx) + d * tx) * ty;
-  };
+  // tileable value noise: a small lattice of random heights, wrapped + bilinearly sampled (shared
+  // helper); L=16 keeps it seamless on repeat. Sampled at u,v = x/size·L below.
+  const L = 16;
+  const noise = makeValueNoise(L, 1234567);
   // height = two octaves of the tiling noise
   const H = new Float32Array(size * size);
   for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {

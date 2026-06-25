@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { heightfieldToNormalMap } from './heightfieldNormal.js';
+import { makeValueNoise } from './valueNoise.js';
 
 // Procedural CREAM-WAVE surface — the soft horizontal "spatula-combed buttercream" ridges.
 //
@@ -23,21 +24,9 @@ const cache = new Map();
 //   reliefMask(v) → vertical 0..1 multiplier for the "top falloff" (waves fade toward the rim).
 export function makeCreamWaveField({ ridges, lobes, waveAmp, noiseAmt, ribbonW, driftAmt, bandPhase, falloff }) {
   const TAU = Math.PI * 2;
-  // Tileable value noise (wraps in both axes) — the organic irregularity in hand combing.
-  const L = 16;
-  const rand = new Float32Array(L * L);
-  let s = 1234567;
-  const next = () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff; };
-  for (let i = 0; i < L * L; i++) rand[i] = next();
-  const latt = (xi, yi) => rand[((yi % L + L) % L) * L + ((xi % L + L) % L)];
-  const smooth = t => t * t * (3 - 2 * t);
-  const noise = (x, y) => {
-    const xi = Math.floor(x), yi = Math.floor(y);
-    const tx = smooth(x - xi), ty = smooth(y - yi);
-    const a = latt(xi, yi),     b = latt(xi + 1, yi);
-    const c = latt(xi, yi + 1), d = latt(xi + 1, yi + 1);
-    return (a * (1 - tx) + b * tx) * (1 - ty) + (c * (1 - tx) + d * tx) * ty;
-  };
+  // Tileable value noise (wraps in both axes) — the organic irregularity in hand combing. Sampled at
+  // raw fractional coords below (lattice units), so L=16 only sets the wrap period.
+  const noise = makeValueNoise(16, 1234567);
 
   // OVERLAPPING-STROKE edge lines. Real combed buttercream is smoothed horizontal strokes, each
   // lapping over the one below — so every band boundary is a thin ASYMMETRIC line: a small proud LIP
@@ -100,18 +89,7 @@ let _grain = null;
 export function getCreamGrainNormalMap(size = 256, strength = 0.5) {
   if (_grain) return _grain;
   const L = 24;
-  const rand = new Float32Array(L * L);
-  let s = 99173;
-  const next = () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff; };
-  for (let i = 0; i < L * L; i++) rand[i] = next();
-  const latt = (xi, yi) => rand[((yi % L + L) % L) * L + ((xi % L + L) % L)];
-  const smooth = t => t * t * (3 - 2 * t);
-  const noise = (x, y) => {
-    const xi = Math.floor(x), yi = Math.floor(y);
-    const tx = smooth(x - xi), ty = smooth(y - yi);
-    const a = latt(xi, yi), b = latt(xi + 1, yi), c = latt(xi, yi + 1), d = latt(xi + 1, yi + 1);
-    return (a * (1 - tx) + b * tx) * (1 - ty) + (c * (1 - tx) + d * tx) * ty;
-  };
+  const noise = makeValueNoise(L, 99173);
   const H = new Float32Array(size * size);
   for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
     const u = x / size * L, v = y / size * L;
@@ -128,18 +106,7 @@ let _foam = null;
 export function getWhippedFoamNormalMap(size = 256, strength = 0.9) {
   if (_foam) return _foam;
   const L = 9;   // coarse lattice → large bubbles (vs the cream grain's L=24)
-  const rand = new Float32Array(L * L);
-  let s = 424242;
-  const next = () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff; };
-  for (let i = 0; i < L * L; i++) rand[i] = next();
-  const latt = (xi, yi) => rand[((yi % L + L) % L) * L + ((xi % L + L) % L)];
-  const smooth = t => t * t * (3 - 2 * t);
-  const noise = (x, y) => {
-    const xi = Math.floor(x), yi = Math.floor(y);
-    const tx = smooth(x - xi), ty = smooth(y - yi);
-    const a = latt(xi, yi), b = latt(xi + 1, yi), c = latt(xi, yi + 1), d = latt(xi + 1, yi + 1);
-    return (a * (1 - tx) + b * tx) * (1 - ty) + (c * (1 - tx) + d * tx) * ty;
-  };
+  const noise = makeValueNoise(L, 424242);
   const H = new Float32Array(size * size);
   for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
     const u = x / size * L, v = y / size * L;
