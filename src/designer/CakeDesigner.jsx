@@ -1085,10 +1085,11 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const [dustColor, setDustColor] = useState('#f0cf63');
   const [dustTier, setDustTier] = useState(0);
   const [dustSel, setDustSel] = useState(0);
-  // Gold leaf ("food foil") — selection state for the finish card (which tier / which flake).
+  // Gold leaf ("food foil") — selection state for the finish card (which tier / surface / flake).
   const [foilColor, setFoilColor] = useState(GOLD_LEAF_COLORS.gold);
   const [foilTier, setFoilTier] = useState(0);
   const [foilSel, setFoilSel] = useState(0);
+  const [foilSurface, setFoilSurface] = useState('side');   // which surface "Add foil" places onto
   // Phase B: live spin-paint. creamPaint = the layer currently being scraped; creamAutoRotate spins the cake.
   const [creamPaint, setCreamPaint] = useState(null);   // { tierIndex, layerId } | null
   const [creamAutoRotate, setCreamAutoRotate] = useState(false);
@@ -1118,17 +1119,24 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // The food-foil ("gold leaf") element is identified by CONFIG, never slug (#1): kind === 'tier_finish'.
   // (Declared after elementById so it doesn't read it before initialization.)
   const foilElement = [...elementById.values()].find(e => e.placement_config?.kind === 'tier_finish') ?? null;
-  // A new flake lands on the front of the wall (default camera view); the customer drags it / adds more.
-  const addFoilToTier = (tierIndex) => {
+  // A new flake lands in view (default camera) so its dot is grabbable; the customer drags it / adds
+  // more. (u,v) is interpreted per surface (side = angle/height; top = angle/radial-frac), so each
+  // surface seeds a small in-view cluster in its own space.
+  const addFoilToTier = (tierIndex, surface = 'side') => {
     const count = design.tiers[tierIndex]?.foil?.flakes?.length ?? 0;
     const pc = foilElement?.placement_config ?? {};
-    // Like luster dust, new shards land at the FRONT (u≈0, the default camera view) so the dot is in
-    // view and grabbable — but spread in a small front cluster (not stacked on one point, not flung to
-    // the back). The customer drags each dot to scatter further.
-    const u = ((((count * 0.37) % 1) - 0.5) * 0.16 + 1) % 1;   // ~±0.08 around the front
-    const v = 0.40 + ((count * 0.29) % 1) * 0.25;              // ~0.40 .. 0.65 of the wall height
+    let u, v;
+    if (surface === 'top_surface') {
+      // Spread shards around the top disk at mid radii (not stacked on the centre, not at the rim edge).
+      u = (count * 0.37) % 1;                          // around the disk
+      v = 0.30 + ((count * 0.23) % 1) * 0.40;          // radial fraction ~0.30 .. 0.70
+    } else {
+      // Side wall: land at the FRONT (u≈0, default camera view), spread in a small front cluster.
+      u = ((((count * 0.37) % 1) - 0.5) * 0.16 + 1) % 1;   // ~±0.08 around the front
+      v = 0.40 + ((count * 0.29) % 1) * 0.25;              // ~0.40 .. 0.65 of the wall height
+    }
     // Default flake size = the element's placement_config.r (default scale, never hard-coded).
-    addFoilFlake(tierIndex, u, v, { color: foilColor, finish: pc.finish, size: pc.r ?? 0.5 });
+    addFoilFlake(tierIndex, u, v, { color: foilColor, finish: pc.finish, size: pc.r ?? 0.5, surface });
     setFoilTier(tierIndex); setFoilSel(count);
   };
   const setAllFoilColor = (c) => {
@@ -3515,8 +3523,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // edited through the decorations card stack. Tier + colour chooser INSIDE the card; then tap "Add",
   // and drag each flake's dot on the cake to scatter the shards. Round tiers only in v1.
   function renderFoilBody(card) {
-    const colors = elementById.get(card.elementId)?.placement_config?.colors ?? GOLD_LEAF_COLORS;
+    const el = elementById.get(card.elementId);
+    const colors = el?.placement_config?.colors ?? GOLD_LEAF_COLORS;
     const flakes = design.tiers[foilTier]?.foil?.flakes ?? [];
+    // Surfaces come straight from the element's allowed_zones (config-driven, #1) — foil is a finish, so
+    // only the round surfaces it can paint (side wall, flat top). Chooser shows only when >1 is allowed.
+    const surfaces = (el?.allowed_zones ?? ['side']).filter(z => z === 'side' || z === 'top_surface');
+    const surfOpts = surfaces.length ? surfaces : ['side'];
+    const effSurface = surfOpts.includes(foilSurface) ? foilSurface : surfOpts[0];
+    const SURF_LABEL = { side: 'Side', top_surface: 'Top' };
     const tierBtn = (active) => ({ minWidth: 26, padding: '4px 8px', borderRadius: 7, fontSize: 11, fontWeight: 700, cursor: 'pointer',
       border: active ? '1.5px solid #3D5A44' : '1.5px solid #C5D4C8', background: active ? '#3D5A44' : '#fff', color: active ? '#fff' : '#3D5A44' });
     return (
@@ -3543,8 +3558,18 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             ))}
           </div>
         </div>
+        {surfOpts.length > 1 && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={s.editPanelLabel}>Surface</span>
+            <div style={{ display: 'flex', gap: 5 }}>
+              {surfOpts.map(z => (
+                <button key={z} style={tierBtn(effSurface === z)} onClick={() => setFoilSurface(z)}>{SURF_LABEL[z] ?? z}</button>
+              ))}
+            </div>
+          </div>
+        )}
         <button style={{ width: '100%', borderRadius: 8, fontSize: 12, fontWeight: 800, color: '#fff', background: '#3D5A44', border: 'none', padding: '9px', cursor: 'pointer' }}
-          onClick={() => addFoilToTier(foilTier)}>Add foil</button>
+          onClick={() => addFoilToTier(foilTier, effSurface)}>Add foil</button>
         {flakes.length > 0 && (
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
             {flakes.map((_, i) => (

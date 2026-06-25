@@ -925,6 +925,38 @@ function TierBody({ position, color, surf, grainExtent, overrideNormalMap = null
   );
 }
 
+// ── Top-surface foil decal ──────────────────────────────────────────────────────
+// Gold leaf on the flat TOP can't bake into the wall unwrap (different surface), so it rides a thin
+// transparent disk decal sitting just above the lid. The baked maps carry the shards; the emissive
+// mask doubles as the alpha map, so only the shards are opaque (the rest of the disk stays clear and
+// the cake top shows through). Same material treatment as the wall foil (lines in TierBody), but
+// transparent — it's a decal, not the surface. A PlaneGeometry(2R) laid flat: its default UV matches
+// the polar `place()` in topDiskProject, so a flake's drag handle (FinishHandles top branch) lands on
+// its shard. Works for cylinder / rounded / styled tiers alike (all share the flat top at topY).
+function TopFoilDecal({ maps, radius, y, foilColor = '#e6be4a', glow = 0.35, env = 4.5 }) {
+  const matRef = useRef();
+  const onRef = useRef(false);
+  // Binding the maps onto an existing material needs a one-time shader recompile (same reason as the
+  // wall body) — do it only when the maps appear/disappear, not on every drag-frame content swap.
+  useEffect(() => {
+    if (!matRef.current) return;
+    const on = !!maps;
+    if (on !== onRef.current) { matRef.current.needsUpdate = true; onRef.current = on; }
+  }, [maps]);
+  if (!maps) return null;
+  return (
+    <mesh position={[0, y, 0]} rotation={[-Math.PI / 2, 0, 0]} renderOrder={2}>
+      <planeGeometry args={[2 * radius, 2 * radius]} />
+      <meshPhysicalMaterial ref={matRef} color="#ffffff" transparent alphaTest={0.35} depthWrite={false}
+        map={maps.map} alphaMap={maps.emissiveMap}
+        roughness={1} metalness={1} metalnessMap={maps.metalnessMap} roughnessMap={maps.roughnessMap}
+        emissive={foilColor} emissiveMap={maps.emissiveMap} emissiveIntensity={glow}
+        clearcoat={1} clearcoatMap={maps.metalnessMap} clearcoatRoughness={0.12}
+        envMapIntensity={env} />
+    </mesh>
+  );
+}
+
 // ── Second cream layer ────────────────────────────────────────────────────────
 // A stack of raised two-tone bands on the tier wall, each with a customer-drawn torn
 // edge h(θ) and optional gold-leaf trim. Bands are REAL geometry (offset shell + ledge
@@ -1065,20 +1097,39 @@ export default function CakeTier({
   );
   const styleNormalScale = styleVals.depth ?? 1;
 
-  // Particle finishes (luster dust + gold leaf) — composite the tier's splash points and foil flakes
-  // into ONE wall material map set (round tiers only; the cylinder UV is what the u,v address). Rebuilt
-  // only when a finish config changes.
-  const finishSig = `${dusting ? JSON.stringify(dusting) : ''}|${foil ? JSON.stringify(foil) : ''}`;
+  // Particle finishes (luster dust + gold leaf) are config-driven by SURFACE: a flake/splash addresses
+  // the wall (cylinder unwrap) or the flat top (polar disk), per its `surface`. Each surface bakes its
+  // own map set — the wall set (dust + side flakes) binds to the tier body; the top set (top flakes)
+  // binds to a thin decal disk above the lid. Round tiers only (the u,v address a round surface).
+  const foilFlakes = foil?.flakes ?? [];
+  const sideFlakes = foilFlakes.filter(f => (f.surface ?? 'side') !== 'top_surface');
+  const topFlakes  = foilFlakes.filter(f => (f.surface ?? 'side') === 'top_surface');
+  const sideFoil = foil && sideFlakes.length ? { ...foil, flakes: sideFlakes } : null;
+  const topFoil  = foil && topFlakes.length  ? { ...foil, flakes: topFlakes }  : null;
+
+  const sideSig = `${dusting ? JSON.stringify(dusting) : ''}|${sideFoil ? JSON.stringify(sideFoil) : ''}`;
   const finishRef = useRef(null);   // reused canvases/textures across rebuilds (drag/add stay cheap)
   const finishMaps = useMemo(() => {
-    if (isRect || !(dusting?.splashes?.length || foil?.flakes?.length)) { finishRef.current = null; return null; }
+    if (isRect || !(dusting?.splashes?.length || sideFoil?.flakes?.length)) { finishRef.current = null; return null; }
     finishRef.current = makeParticleFinishMaps({
-      radius, height, baseColor: color, surfRoughness: mat.roughness ?? 0.68, surfMetalness: mat.metalness ?? 0,
-      dusting, foil, reuse: finishRef.current,
+      surface: 'side', radius, height, baseColor: color, surfRoughness: mat.roughness ?? 0.68, surfMetalness: mat.metalness ?? 0,
+      dusting, foil: sideFoil, reuse: finishRef.current,
     });
     return finishRef.current;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isRect, radius, height, color, mat.roughness, mat.metalness, finishSig]);
+  }, [isRect, radius, height, color, mat.roughness, mat.metalness, sideSig]);
+
+  const topSig = topFoil ? JSON.stringify(topFoil) : '';
+  const topFinishRef = useRef(null);
+  const topFinishMaps = useMemo(() => {
+    if (isRect || !topFoil?.flakes?.length) { topFinishRef.current = null; return null; }
+    topFinishRef.current = makeParticleFinishMaps({
+      surface: 'top_surface', radius, height, baseColor: color, surfRoughness: mat.roughness ?? 0.68, surfMetalness: mat.metalness ?? 0,
+      foil: topFoil, reuse: topFinishRef.current,
+    });
+    return topFinishRef.current;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isRect, radius, height, color, mat.roughness, mat.metalness, topSig]);
 
   const tops    = topPipings    ?? (topPiping    ? [topPiping]    : []);
   const bottoms = bottomPipings ?? (bottomPiping ? [bottomPiping] : []);
@@ -1213,6 +1264,10 @@ export default function CakeTier({
       {!isRect && (
         <SecondCreamLayers layers={creamLayers ?? []} radius={radius} yBase={yBase} height={height}
           grainKey={mat.grain} grainDensity={mat.grainDensity} />
+      )}
+      {!isRect && topFinishMaps && (
+        <TopFoilDecal maps={topFinishMaps} radius={radius - 0.02} y={topY + 0.02}
+          foilColor={topFoil?.color} glow={topFoil?.finish?.glow ?? 0.35} env={topFoil?.finish?.env ?? 4.5} />
       )}
       {renderTops()}
       {renderBottoms()}

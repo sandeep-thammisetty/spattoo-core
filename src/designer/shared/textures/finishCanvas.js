@@ -21,6 +21,18 @@ export function finishCanvasSize(radius, height) {
   return { WU, Wc, Hc };
 }
 
+// Top-surface finish canvas: the flat tier TOP is a disk, not a cylinder unwrap, so it uses a SQUARE
+// canvas mapped to the disk (a flake's polar (angle, radial-frac) addresses it — see particleFinish).
+// Sized off the diameter at the same px/world density as the wall so a shard draws the same physical
+// size on top as on the side; capped like the wall so a big tier can't blow the texture budget.
+export function finishDiskCanvasSize(radius) {
+  const WU = 2 * radius;                       // world span across the disk (diameter)
+  const CAP = 1024;
+  let S = Math.round(WU * (448 / 2.2));         // match the wall's ~px/world (Hc 448 over a 2.2 wall)
+  S = Math.max(64, Math.min(CAP, S));
+  return { WU, Wc: S, Hc: S };
+}
+
 export function mkCtx(bg, Wc, Hc) {
   const c = document.createElement('canvas'); c.width = Wc; c.height = Hc;
   const x = c.getContext('2d'); x.fillStyle = bg; x.fillRect(0, 0, Wc, Hc); return x;

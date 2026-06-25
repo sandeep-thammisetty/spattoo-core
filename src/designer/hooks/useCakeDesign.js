@@ -334,9 +334,11 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     }));
   }
 
-  // ── Gold leaf ("food foil") — a per-tier wall finish, sibling to dusting: a LIST of torn flakes
-  // {u,v,rot,size,seed} + a colour/finish. A tap adds one flake; the first flake seeds the foil object
-  // from the food-foil element's config (DB-authored finish + chosen colour). NOT a sticker.
+  // ── Gold leaf ("food foil") — a per-tier finish, sibling to dusting: a LIST of torn flakes
+  // {u,v,rot,size,seed,surface} + a colour/finish. A tap adds one flake; the first flake seeds the foil
+  // object from the food-foil element's config (DB-authored finish + chosen colour). NOT a sticker.
+  // `surface` ('side' | 'top_surface', default 'side') is which tier surface the flake sits on; (u,v) is
+  // interpreted per surface (side = angle/height; top = angle/radial-frac) — see particleFinish.
   function addFoilFlake(index, u, v, seed = {}) {
     setDesign(prev => ({
       ...prev,
@@ -348,7 +350,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
           flakes: [],
         };
         const fseed = (base.flakes.length * 977 + Math.round(u * 9973) + Math.round(v * 7919)) % 100000 + 1;
-        return { ...t, foil: { ...base, flakes: [...base.flakes, { u, v, ...GOLD_LEAF_NEW_FLAKE, size: seed.size ?? GOLD_LEAF_NEW_FLAKE.size, rot: Math.round((u * 360) % 360), seed: fseed }] } };
+        return { ...t, foil: { ...base, flakes: [...base.flakes, { u, v, surface: seed.surface ?? 'side', ...GOLD_LEAF_NEW_FLAKE, size: seed.size ?? GOLD_LEAF_NEW_FLAKE.size, rot: Math.round((u * 360) % 360), seed: fseed }] } };
       }),
     }));
   }

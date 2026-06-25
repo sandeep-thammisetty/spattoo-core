@@ -54,15 +54,35 @@ function foilCrinkleTile(seed) {
   return _foilTile.canvas;
 }
 
+// The side-wall (cylinder unwrap) coordinate mapper: u = angle/2π across the width, v = height
+// fraction (inverted so a flake lands under the tap), and a flake near a seam stamps a wrapped copy
+// one circumference over. This is the DEFAULT `project` — `makeParticleFinishMaps` passes a polar
+// one for the flat top. A `project` is { pxPerWorld, place(f, radPx) -> [[cx,cy], …] } so the torn-
+// shard stamping below is identical on every surface; only the (u,v)→pixel map changes.
+export function sideWallProject(Wc, Hc, height) {
+  return {
+    pxPerWorld: Hc / height,
+    place(f, radPx) {
+      const cx0 = (f.u ?? 0.5) * Wc;
+      const cy = (1 - (f.v ?? 0.5)) * Hc;
+      const xs = cx0 < radPx * 2 ? [cx0, cx0 + Wc]
+               : cx0 > Wc - radPx * 2 ? [cx0, cx0 - Wc] : [cx0];
+      return xs.map(cx => [cx, cy]);
+    },
+  };
+}
+
 // Stamp every flake (each {u, v, rot, size, seed}) onto the supplied canvas 2D contexts. Albedo = bright
 // gold/silver with a gentle foil crinkle (soft fold shadows + bright sparkle); metalness/roughness =
-// ABSOLUTE greys on the shard so it goes metal over the matte base.
+// ABSOLUTE greys on the shard so it goes metal over the matte base. `project` maps (u,v)→pixels for the
+// surface (side wall by default; a polar disk map for the flat top) — the shard art is surface-agnostic.
 export function stampFoilFlakes({
   alb, met, rou, emi, Wc, Hc, height = 2.2, leafColor = GOLD_LEAF_COLORS.gold,
   metalness = GOLD_LEAF_DEFAULTS.metalness, roughness = GOLD_LEAF_DEFAULTS.roughness,
-  sizeScale = 1, raggedness = GOLD_LEAF_DEFAULTS.raggedness, flakes = [], seed = 99,
+  sizeScale = 1, raggedness = GOLD_LEAF_DEFAULTS.raggedness, flakes = [], seed = 99, project = null,
 }) {
-  const pxPerWorld = Hc / height;
+  const proj = project ?? sideWallProject(Wc, Hc, height);
+  const pxPerWorld = proj.pxPerWorld;
   // Shared foil crinkle tile — reuse the approved gold-leaf texture as each shard's interior. Cached by
   // seed at module scope: the crinkle is identical every rebuild, so we must NOT re-run the fbm noise on
   // every drag frame (that made dragging lag). Only the cheap per-flake stamping repeats.
@@ -72,15 +92,12 @@ export function stampFoilFlakes({
   flakes.forEach((f, fi) => {
     const worldRad = 0.4 * (f.size ?? 1) * sizeScale;   // size→world unit; size comes from config r (default scale)
     const radPx = Math.max(3, worldRad * pxPerWorld);
-    const cx0 = (f.u ?? 0.5) * Wc;
-    const cy = (1 - (f.v ?? 0.5)) * Hc;          // invert Y → flake lands under the tap
     const rot = (f.rot ?? 0) * Math.PI / 180;
     const fseed = ((f.seed ?? 1) * 2654435761 + fi * 40503) >>> 0;
-    // Wrap the back seam: a flake near u=0/1 also stamps a copy one circumference over.
-    const xs = cx0 < radPx * 2 ? [cx0, cx0 + Wc]
-             : cx0 > Wc - radPx * 2 ? [cx0, cx0 - Wc] : [cx0];
+    // (u,v)→pixel centre(s) for this surface (side wall wraps the seam; top is a single polar point).
+    const centers = proj.place(f, radPx);
 
-    for (const cx of xs) {
+    for (const [cx, cy] of centers) {
       const rng = mulberry((fseed + Math.round(cx)) >>> 0);
       const pts = tornPts(cx, cy, radPx, rot, rng, raggedness);
       const box = [cx - radPx * 1.3, cy - radPx * 1.3, radPx * 2.6, radPx * 2.6];

@@ -1,6 +1,22 @@
-import { finishCanvasSize, mkCtx, clearCtx, ctxTexture, gray } from './finishCanvas.js';
+import { finishCanvasSize, finishDiskCanvasSize, mkCtx, clearCtx, ctxTexture, gray } from './finishCanvas.js';
 import { stampDustFlecks, LUSTER_DUST_DEFAULTS } from './lusterDust.js';
 import { stampFoilFlakes, GOLD_LEAF_DEFAULTS } from './goldLeafFlakes.js';
+
+// Polar coordinate mapper for the flat TOP disk: a flake's (u,v) is (angle/2π, radial fraction 0→rim).
+// It maps onto a SQUARE canvas that a PlaneGeometry(2R) decal (flipY texture) samples, so the same
+// (u,v) places the shard here AND positions its drag handle in world space (see FinishHandles top
+// branch — both use worldX=v·R·sinθ, worldZ=v·R·cosθ). No seam wrap (a disk has no seam).
+function topDiskProject(S, radius) {
+  const half = S / 2;
+  return {
+    pxPerWorld: S / (2 * radius),     // disk spans 2R world across S px
+    place(f) {
+      const th = (f.u ?? 0) * Math.PI * 2;
+      const r = f.v ?? 0;
+      return [[half + half * r * Math.sin(th), half + half * r * Math.cos(th)]];
+    },
+  };
+}
 
 // ── Unified particle-finish compositor ────────────────────────────────────────
 // A tier wall can carry luster dust AND gold leaf at once, but a material has ONE map slot per channel
@@ -14,10 +30,12 @@ import { stampFoilFlakes, GOLD_LEAF_DEFAULTS } from './goldLeafFlakes.js';
 // fresh ones each frame (allocation/GC + new-texture churn was the drag cost). The normal map is not
 // produced — the designer keeps the cream grain normal, so a finish normal would be unused.
 export function makeParticleFinishMaps({
-  radius = 1, height = 2.2, baseColor = '#ffffff', surfRoughness = 0.68, surfMetalness = 0,
+  surface = 'side', radius = 1, height = 2.2, baseColor = '#ffffff', surfRoughness = 0.68, surfMetalness = 0,
   dusting = null, foil = null, reuse = null,
 }) {
-  const { WU, Wc, Hc } = finishCanvasSize(radius, height);
+  // The flat top is a disk decal (polar map, square canvas); every other surface is the wall unwrap.
+  const top = surface === 'top_surface';
+  const { WU, Wc, Hc } = top ? finishDiskCanvasSize(radius) : finishCanvasSize(radius, height);
   const reusable = reuse && reuse._w === Wc && reuse._h === Hc;
 
   let alb, met, rou, emi;
@@ -34,7 +52,7 @@ export function makeParticleFinishMaps({
     emi = mkCtx('#000000', Wc, Hc);
   }
 
-  if (dusting?.splashes?.length) {
+  if (!top && dusting?.splashes?.length) {   // dust is a wall flick — top-surface dust is not offered
     const d = { ...LUSTER_DUST_DEFAULTS, ...dusting };
     stampDustFlecks({
       alb, met, rou, emi, nrm: null, Wc, Hc, WU, radius, height,
@@ -52,6 +70,7 @@ export function makeParticleFinishMaps({
       leafColor: foil.color ?? '#e6be4a',
       metalness: fin.metalness, roughness: fin.roughness, sizeScale: fin.sizeScale, raggedness: fin.raggedness,
       flakes: foil.flakes, seed: 99,
+      project: top ? topDiskProject(Wc, radius) : null,
     });
   }
 
