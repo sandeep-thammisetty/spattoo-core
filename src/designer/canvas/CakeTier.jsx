@@ -903,9 +903,9 @@ function TierBody({ position, color, surf, grainExtent, overrideNormalMap = null
         metalness={finishMaps ? 1 : (surf?.metalness ?? 0)}
         metalnessMap={finishMaps?.metalnessMap ?? null}
         roughnessMap={finishMaps?.roughnessMap ?? null}
-        emissive={finishMaps && dusting ? (dusting?.dustColor ?? '#000000') : '#000000'}
+        emissive={finishMaps ? (foil ? (foil.color ?? '#000000') : (dusting?.dustColor ?? '#000000')) : '#000000'}
         emissiveMap={finishMaps?.emissiveMap ?? null}
-        emissiveIntensity={finishMaps && dusting ? (dusting?.glow ?? 0) : 0}
+        emissiveIntensity={finishMaps ? (foil ? (foil.finish?.glow ?? 0.35) : (dusting?.glow ?? 0)) : 0}
         sheen={surf?.sheen ?? 0} sheenRoughness={surf?.sheenRoughness ?? 0.6} sheenColor={surf?.sheenColor ?? '#ffffff'}
         clearcoat={finishMaps ? 1 : (surf?.clearcoat ?? 0)}
         clearcoatMap={finishMaps?.metalnessMap ?? null}

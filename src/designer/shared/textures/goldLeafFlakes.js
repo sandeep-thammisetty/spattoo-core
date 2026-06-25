@@ -18,6 +18,7 @@ export const GOLD_LEAF_DEFAULTS = {
   crinkle: 0.7,           // reserved for a future bound crinkle normal (M4)
   sizeScale: 1.0,         // global flake-size multiplier
   raggedness: 0.55,       // 0 = round blob, 1 = very torn/spiky shard
+  glow: 0.35,             // emissive glow on the shards (gold, gated to flakes) → luminous foil
 };
 export const GOLD_LEAF_COLORS = { gold: '#e6be4a', silver: '#cdd2d8' };
 export const GOLD_LEAF_NEW_FLAKE = { rot: 0, size: 1, seed: 1 };   // a fresh shard from a tap
@@ -57,7 +58,7 @@ function foilCrinkleTile(seed) {
 // gold/silver with a gentle foil crinkle (soft fold shadows + bright sparkle); metalness/roughness =
 // ABSOLUTE greys on the shard so it goes metal over the matte base.
 export function stampFoilFlakes({
-  alb, met, rou, Wc, Hc, height = 2.2, leafColor = GOLD_LEAF_COLORS.gold,
+  alb, met, rou, emi, Wc, Hc, height = 2.2, leafColor = GOLD_LEAF_COLORS.gold,
   metalness = GOLD_LEAF_DEFAULTS.metalness, roughness = GOLD_LEAF_DEFAULTS.roughness,
   sizeScale = 1, raggedness = GOLD_LEAF_DEFAULTS.raggedness, flakes = [], seed = 99,
 }) {
@@ -106,6 +107,8 @@ export function stampFoilFlakes({
       // METALNESS + ROUGHNESS: absolute greys inside the shard → it goes metal & glossy.
       met.save(); trace(met, pts); met.clip(); met.fillStyle = metFill; met.fillRect(...box); met.restore();
       rou.save(); trace(rou, pts); rou.clip(); rou.fillStyle = rouFill; rou.fillRect(...box); rou.restore();
+      // EMISSIVE MASK: the shard glows (material.emissive tints it gold) → luminous foil.
+      if (emi) { emi.save(); trace(emi, pts); emi.clip(); emi.fillStyle = '#ffffff'; emi.fillRect(...box); emi.restore(); }
     }
   });
 }

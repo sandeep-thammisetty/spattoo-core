@@ -36,7 +36,7 @@ export function makeParticleFinishMaps({
   if (foil?.flakes?.length) {
     const fin = { ...GOLD_LEAF_DEFAULTS, ...(foil.finish ?? {}) };
     stampFoilFlakes({
-      alb, met, rou, Wc, Hc, height,
+      alb, met, rou, emi, Wc, Hc, height,
       leafColor: foil.color ?? '#e6be4a',
       metalness: fin.metalness, roughness: fin.roughness, sizeScale: fin.sizeScale, raggedness: fin.raggedness,
       flakes: foil.flakes, seed: 99,
