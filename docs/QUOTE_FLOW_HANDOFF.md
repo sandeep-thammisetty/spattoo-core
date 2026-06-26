@@ -64,11 +64,12 @@ npm run dev:app                      # apps/app (storefront + designer)
 # marketing, if needed: npm run dev:marketing
 ```
 
-Customer storefront URL in dev (subdomain middleware only fires on `*.spattoo.com` / `*.localhost`):
-- Plain path: `http://localhost:3000/<baker-slug>`
-- Subdomain (exercises middleware): `http://<baker-slug>.localhost:3000`
+URLs in dev (subdomain middleware only fires on `*.spattoo.com` / `*.localhost`):
+- **Baker app** (sign in → order management + Send quote): `http://localhost:3000` (the app-surface root)
+- **Customer storefront**: `http://localhost:3000/<baker-slug>` (or `http://<baker-slug>.localhost:3000`)
+  - designer at `…/<slug>/design`, quotes view at `…/<slug>/orders`
 
-The designer is at `…/<slug>/design`, the quotes view at `…/<slug>/orders`.
+The baker logs in with their Supabase email/password (the account created at onboarding).
 
 > **`@spattoo/designer` link:** vendored tarball (`spattoo-web/vendor/spattoo-designer-*.tgz`).
 > If you change `spattoo-core`, re-pack: `cd <core> && npm run build && npm pack --pack-destination=<spattoo-web>/vendor`, bump the filename in `apps/app/package.json`, `npm install`. See `apps/app/LINKING.md`.
@@ -84,7 +85,8 @@ Prereqs: a baker with a **published storefront** + slug, and a **customer invite
 2. **Design + request** — `…/<slug>/design`, place a few decorations, **Request quote**.
    - Verify an order row appears with status `requested`, `customer_id` resolved **from the token**
      (the request payload carries no customer identity), and a `order_design_versions` v1.
-3. **Baker quote** — in the baker OrdersPanel, open the request → enter a price → **Send quote**.
+3. **Baker quote** — open the **baker app** (`localhost:3000`), sign in, open the request in the
+   order-details screen → enter a price → **Send quote**.
    - status → `quoted`, `quoted_version_id == current_version_id`, customer emailed.
 4. **Customer accept** — `…/<slug>/orders` → "Quote ready" + price → **Accept** → `confirmed`,
    `final_price` set, baker emailed.
@@ -108,10 +110,11 @@ Prereqs: a baker with a **published storefront** + slug, and a **customer invite
 
 ## 7. Known gaps / deferred (NOT done — roadmap)
 
-- **Baker app surface (`app.spattoo.com`)** — nothing hosts the baker OrdersPanel yet, and the baker
-  host's apiClient must implement **`issueQuote(orderId, { price })`** → `POST /orders/:id/quote`
-  (and `updateOrderStatus`, `editOrder`, etc.). **Verifying steps 3 & 5 needs this.** Today only
-  `spattoo-admin` mounts core (template mode); decide where bakers manage orders.
+- **Baker app surface (`app.spattoo.com`)** — ✅ **built (Task 11):** `apps/app` root mounts core
+  `OrdersPanel` behind a Supabase login, with a baker apiClient (incl. `issueQuote`). Bakers review +
+  Send quote from the order-details screen. Remaining: **in-app 3D design edit is a no-op** there
+  (`onEditDesign` alerts "coming soon") — the baker can't yet open/refine the cake in 3D from the order
+  screen; status/details/quote all work.
 - **Customer re-open/refine after submit** — the design-edit route is baker-authed; a customer
   refining a submitted design needs a customer design-edit endpoint (+ host wiring).
 - **Counter-offers** — Task 6 shipped accept + decline only; the negotiation/counter loop (§1a) is its
