@@ -1,6 +1,7 @@
 # spattoo — Pricing, Quote & Payments Plan
 
-> Status: **planned / discussion** (drafted 2026-06-26). Living doc. Companion to
+> Status: **planned / discussion** (drafted 2026-06-26; updated 2026-06-26 with the
+> collaborative-design model + v1 entry/auth build). Living doc. Companion to
 > `CORE_ARCHITECTURE_PLAN.md`.
 >
 > ⚠️ **The "Payments & settlement (India)" section is NOT legal, tax, or compliance advice.** It maps
@@ -14,7 +15,8 @@
 
 A custom cake is quote-based, not fixed-cart. The flow:
 
-1. Customer designs in the 3D designer and **places a request** (current `POST /api/orders`).
+1. A design comes into being — **either** the customer designs it themselves, **or** the baker plants a
+   base design and hands it over (see §1e). Customer **places a request** when happy.
 2. Baker **reviews**: confirms makeability and sets a price → issues a **quote**.
 3. Quote goes to the customer; customer **accepts / counters / rejects**.
 4. On acceptance the order is **confirmed**.
@@ -36,11 +38,13 @@ Home bakers price by affordability *through conversation*, so the state machine 
 - **Cancel** at any stage.
 
 ### 1b. Quotes are pinned to a design version
-- A quote prices *this* design + weight + date. Any later design edit **supersedes** the quote (forces
-  a re-quote).
-- If the **baker** edits the design for makeability (`PATCH /orders/:id/design` exists), the change
-  **round-trips back to the customer to confirm** — nobody ends up with a different cake (or price)
-  than they agreed to. The order audit log already exists to track this.
+- A quote prices *this* design + weight + date (`orders.quoted_version_id`). When the design advances
+  past that version the quote goes **stale** and the customer can't accept it — the baker re-affirms
+  (re-pin, price holds) or re-quotes. See §1e/§1f for the full rule and why price-neutral edits don't
+  force a fresh number in v1.
+- Either side can edit pre-confirm (shared pen, §1e); a **baker** edit emails the customer. Once
+  `confirmed` the design is locked (§1f) — nobody ends up with a different cake (or price) than they
+  agreed to. The order audit log tracks every change.
 
 ### 1c. The quote is a transparent itemized artifact
 Show line items — base (weight × flavour), decorations, delivery, packaging — not just a total. Reduces
@@ -51,6 +55,66 @@ data (suggested vs quoted vs final-agreed).
 Design + **suggested price (override-able)** + itemized decoration breakdown + **makeability flags**
 (too many tiers for the date, a decoration the baker hasn't enabled, structural concerns). This is the
 same enumeration the X-Ray order-help feature does — one shared engine.
+
+- **Implemented (Task 9 — manual price, no suggestion yet):** `POST /api/orders/:id/quote` captures the
+  price (+ optional line items / valid-until), **pins it to the current design version**, flips status →
+  `quoted`, audits, and emails the customer (`quote_issued_customer`). The baker UI is a **Quote panel**
+  in `OrdersPanel` (quote phase only): price entry → **Send/Update quote**, current quote + stale badge,
+  and a **"Price holds"** action that re-pins a stale quote without changing the number. Host baker app
+  must implement `apiClient.issueQuote(orderId, { price })`. The **suggested-price algorithm + itemized
+  breakdown (§2) is still deferred** — this is manual entry (Phase 0).
+
+### 1e. Collaborative design — one evolving design, a shared pen
+The design is not owned by one side and the flow is not one-directional. A design is a **single shared
+artifact** that either party can originate and both can refine. This is where Spattoo beats the
+WhatsApp status quo.
+
+- **Why not "baker sends a few options to choose from"?** That's a workaround for a *static* medium
+  (dead-end images you can't change). In Spattoo a design is *live*, so "send 5 options" collapses into
+  "send 1 base, then refine." **Refinement replaces multiplicity** — there is **no candidate shortlist,
+  no "pick one" step**. One design per order, with a version history.
+- **Either side plants the seed.** Customer designs from scratch, **or** — for the (common) customer who
+  freezes at a blank cake or "sees cake as just edible, not presentation" — the **baker plants a base
+  design and hands it over**: *"here's a starting point, make it yours."* Same object, different
+  originator.
+- **The customer holds the pen and refines it themselves — on purpose.** "More pink, a taller top tier,
+  another rosette" is done *by the customer*, because that joyful self-design moment **is the product we
+  sell**. We do **not** restrict editing to the baker.
+- **Why customer-edits is safe here (and wouldn't be on WhatsApp):** the designer is **config-driven** —
+  the customer can only place baker-enabled elements in placement-config-allowed zones. The toolset
+  *is* the guardrail; a customer literally cannot design something un-bakeable. Feasibility is bounded
+  by the baker's catalog, not by trust.
+- **Turn-based handoff, not live co-editing (v1).** The pen is held by one party at a time and handed
+  off explicitly (send / submit). No real-time simultaneous editing in v1 — avoids conflict and keeps
+  it simple. (A **screen-share "design together" mode**, where the baker can guide the customer live
+  while one holds the pen, is a **separate future feature** — a strong communication moment, tracked
+  outside this plan.)
+- **Versions are append-only; quotes pin to a version (ties into §1b).** Each refinement is a new
+  version, history preserved (audit/soft-delete friendly). A quote is bound to the version it priced.
+  When the design advances past that version the quote is **stale** (`quoted_version_id != current_version_id`)
+  and the customer **cannot accept it** — but a stale quote isn't auto-voided: the baker decides in one
+  tap, **"price holds"** (re-pin to the current version, *no new number* — the price-neutral case) or
+  **"update price"** (new quote). Fully-automatic skip of price-neutral edits needs Phase-1 auto-pricing
+  to diff the price; until then the baker is the judge (the algorithm is baker-internal anyway). The
+  baker-only action in the whole loop is **pricing** (→ "Send quote"); everyone *designs* in the one
+  designer.
+
+### 1f. Edit & lock rules (v1, locked 2026-06-26)
+Both sides share the pen *before* confirmation; after confirmation the **design** is locked (the
+cake/price the customer accepted), but **delivery logistics stay editable**.
+
+| State | Customer edit | Baker edit | Effect |
+|---|---|---|---|
+| `initiated` / `requested` | yes | yes | versioned; a **baker** edit emails the customer ("design recommendations") |
+| `quoted` | yes | yes | versioned; quote flagged **stale** → baker taps *price holds* (re-pin) or *update price* |
+| `confirmed` and later | no | no (design) | **design locked** → cancel + recreate to change the cake |
+
+- **Lock is field-scoped, not blanket.** After `confirmed`: the design route and the price-bearing
+  fields (`weight_kg`, `flavours`) reject edits; **logistics** (`delivery_date/time/mode/address`) stay
+  open to the baker — changing where/when it's delivered doesn't touch the cake or the agreed price, so
+  no cancel-and-recreate for that.
+- Enforced server-side: design edits + price fields require the order to be in the **quote phase**
+  (`order_statuses.phase = 'quote'`); otherwise `409`.
 
 ---
 
@@ -80,9 +144,27 @@ same enumeration the X-Ray order-help feature does — one shared engine.
 ---
 
 ## 3. Schema / API deltas (most order *management* already exists)
-- **Status enum + transition rules**: `requested → under_review → changes_requested ⇄ customer →
-  quoted → negotiating ⇄ → confirmed → in_production → ready → completed`, plus `declined`, `expired`,
-  `cancelled`. (`PATCH /orders/:id/status` + audit already exist.)
+- **Status is a managed lookup TABLE, not free text** (decided 2026-06-26, shipped in the api worktree).
+  `orders.status` was a free-text column policed only by a JS array (`VALID_STATUSES`). It is now an
+  `order_statuses` lookup table (`supabase/order_statuses.sql`) carrying display metadata
+  (`label, phase, sort_order, is_terminal, customer_visible, tone`), with `orders.status` kept as TEXT
+  but FK-constrained to `order_statuses(key)`. Rationale: a real table + referential integrity + the
+  metadata the UI needs, while keeping readable values so existing text queries / `status === 'x'`
+  checks keep working and we avoid magic-number ids. (`subscription_plans` set the lookup-table
+  precedent; we use a text natural key here rather than an int id because status is read/filtered as
+  text everywhere — int ids would force churny rewrites for no gain.) Served to the UIs via
+  `GET /api/order-statuses` so core stops hardcoding the lifecycle.
+  - Merged lifecycle (quote phase + existing fulfillment phase, one timeline):
+    `initiated → requested → quoted → confirmed → in_production → ready → completed`, with `declined` /
+    `cancelled` / `expired` as terminal off-ramps.
+    - `initiated` — a design thread exists (baker-seeded base, or customer mid-design) but no quote
+      requested yet; the entry point for the collaborative-design model (§1e).
+    - `requested` supersedes old `pending`; `confirmed` supersedes old `approved`; `in_production` /
+      `completed` supersede old `in_progress` / `delivered` (existing rows backfilled).
+    - `approved_at` stamps on `confirmed`; `priced_at` stamps on `quoted`.
+    (`PATCH /orders/:id/status` + audit already exist; validation now reads the table.) The richer
+    negotiation sub-states (under_review / changes_requested / negotiating) can be added later as rows
+    without a migration.
 - **Quote fields on the order**: `suggested_price` (algo, internal-only), `quoted_price` + `line_items`,
   `quote_valid_until`, `final_price`, `priced_at`.
 - **Pricing config (DB, via API; never localStorage)**: `baker_flavour_prices` (per-kg),
@@ -92,6 +174,44 @@ same enumeration the X-Ray order-help feature does — one shared engine.
   storefront has no order-status/quote screen). Main new customer-facing build.
 - **Notifications**: request → baker, quote → customer, accept → baker. Set a visible "typical response
   time" to manage the human-in-the-loop latency.
+
+### 3a. Order entry + the auth blocker (v1, build first)
+Traced from current code (`OrderModal.jsx`, `CakeDesigner.jsx:3041-3096`, `spattoo-api orders.js`):
+
+- **AUTH BLOCKER — fix first.** Today `POST /api/orders` is **public and trusts customer name/phone
+  from the form payload** (no auth). The storefront already logs the customer in via OTP and holds a
+  Supabase session, but **nothing uses it for ordering**. Required: an **authenticated customer order
+  route** (or auth on the same route) that derives `customer_id` **from `req.user` (the token), never
+  from the client payload**. Without this, "skip the customer search" is a security hole — a logged-in
+  customer could submit as anyone. This is the prerequisite for the whole customer flow.
+- **`OrderModal` is context-driven, not two modals (IMPLEMENTED — Task 4, core worktree).** A single
+  `mode` prop drives the customer-search step's presence, the header text, the footer label, and the
+  submit payload. *Context is an input, not a screen.* The hardcoded `0/1/2` steps were replaced with a
+  mode-derived `STEP_DEFS` array, and `CakeDesigner` gained an `orderMode` prop (default `'baker'`,
+  forwarded to `OrderModal` + routes `handleOrderSubmit`).
+  - `mode='customer'` (storefront): **skips the customer-search step** (customer = session), footer =
+    **"Request quote"**, payload carries **no** customer identity → `apiClient.requestQuote({…, bakerSlug})`
+    → `POST /api/customer/orders` (server derives the customer from the token). Header "Request a Quote",
+    success "Quote Requested!".
+  - `mode='baker'` (`CakeDesigner`): keeps customer search, footer = **"Create order"** →
+    `apiClient.placeOrder` (unchanged). **Baker price-entry → "Send quote" is a separate flow** (Task 9,
+    §1d) that runs *after* design agreement — it needs a price step + a quote-issue endpoint, so it is
+    NOT in `OrderModal`.
+  - **Storefront must implement `apiClient.requestQuote(payload)`** (authenticated `POST /api/customer/orders`)
+    and mount `CakeDesigner` with `orderMode="customer"` — that wiring is Task 5.
+- **Persisted, re-openable design tied to the order, with versions.** `designSnapshot` JSON already
+  exists; it becomes a saved, **addressable** entity the customer can re-open in their storefront
+  session and refine (the designer already loads a snapshot — mostly plumbing + auth). Each refinement
+  is a new version (§1e). Promoting a baker-seeded design → template/inspiration entry should be one
+  step (the self-serve catalog flywheel), not a rebuild.
+  - **Implemented (api worktree):** `order_design_versions` table (append-only: `order_id`,
+    `version_no`, `design_snapshot`, `design_thumbnail_url`, `authored_by`); `orders.current_version_id`
+    + `orders.quoted_version_id` pointers; `orders.design_snapshot` kept as a denormalized mirror so
+    existing reads are untouched. Order-create seeds v1; `PATCH /orders/:id/design` appends a version
+    (guarded to the quote phase) + emails the customer; `PATCH /orders/:id/status → quoted` pins the
+    quote to the current version; `GET /orders/:id/versions` lists history; GET responses expose a
+    derived `quote_stale`. **Designer-side (saving through the versioned endpoint, customer re-open) is
+    deferred to Task 5 and gated on the `src/designer/` analysis rule.**
 
 ---
 
