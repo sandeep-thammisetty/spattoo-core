@@ -148,8 +148,8 @@ export default function InvitePanel({ open, onClose, apiClient, primaryColor = '
                   </div>
                 </Field>
                 <div style={st.deliveryRow}>
-                  Email: {result.delivery?.email?.sent
-                    ? <b style={{ color: '#2E7D32' }}>sent</b>
+                  Email: {result.delivery?.email?.queued
+                    ? <b style={{ color: '#2E7D32' }}>on its way</b>
                     : <span style={{ color: '#9a8' }}>not sent{result.delivery?.email?.reason ? ` (${result.delivery.email.reason})` : ''}</span>}
                 </div>
                 <button type="button" onClick={reset} style={{ ...st.primary, background: primaryColor }}>Invite another</button>
