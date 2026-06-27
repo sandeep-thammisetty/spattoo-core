@@ -139,6 +139,55 @@ const SECOND_CREAM_LAYER_DEFAULT = {
 // that stored decoration type 'swirl_ring'/'base_border' instead of piping objects.
 const LEGACY_PIPING_SLUG = 'elements/3D-images/piping-cream4.glb';
 
+// Normalise a saved/template design into the editor's design shape: array-format
+// pipings tagged with layerIds, legacy piping + topper→sticker migrations, and
+// per-tier defaults. Exported so READ-ONLY consumers (the order 3D viewer) feed
+// CakePreview the SAME shape the editor uses — toCanvasConfig assumes this, and a
+// raw snapshot may be legacy or under-defaulted.
+export function normalizeDesign(templateDesign, storageBaseUrl = '') {
+  const legacyGlbUrl = storageBaseUrl ? `${storageBaseUrl}/${LEGACY_PIPING_SLUG}` : null;
+  return {
+    tiers: (templateDesign.tiers ?? []).map(t => {
+      // New format stores arrays; old format a single object. Normalise to arrays and
+      // tag each with a layerId so stacked layers stay addressable.
+      let topPipings = t.topPipings ?? (t.topPiping ? [t.topPiping] : []);
+      let bottomPipings = t.bottomPipings ?? (t.bottomPiping ? [t.bottomPiping] : []);
+      if (!topPipings.length && legacyGlbUrl && (t.decorations ?? []).some(d => d.type === 'swirl_ring')) {
+        const d = t.decorations.find(d => d.type === 'swirl_ring');
+        topPipings = [{ glbUrl: legacyGlbUrl, name: 'Shell', color: d.color ?? '#f5e6c8' }];
+      }
+      if (!bottomPipings.length && legacyGlbUrl && (t.decorations ?? []).some(d => d.type === 'base_border')) {
+        const d = t.decorations.find(d => d.type === 'base_border');
+        bottomPipings = [{ glbUrl: legacyGlbUrl, name: 'Shell', color: d.color ?? '#f5e6c8' }];
+      }
+      return {
+        color:        t.color ?? '#ffffff',
+        ...(t.gradient && { gradient: t.gradient }),
+        topPipings:    topPipings.map(withLayerId),
+        bottomPipings: bottomPipings.map(withLayerId),
+        ...(t.radius != null  && { radius: t.radius }),
+        ...(t.height != null  && { height: t.height }),
+        ...(t.shape   != null  && { shape: t.shape }),
+        ...(t.width   != null  && { width: t.width }),
+        ...(t.depth   != null  && { depth: t.depth }),
+        ...(t.cornerR != null  && { cornerR: t.cornerR }),
+        // Restore per-tier wall treatments saved in the snapshot (luster dust,
+        // gold-leaf foil) so edit-in-3D / template load / view brings them back.
+        ...(t.dusting != null && { dusting: t.dusting }),
+        ...(t.foil    != null && { foil: t.foil }),
+      };
+    }),
+    texts:    templateDesign.texts ?? [],
+    ages:     templateDesign.ages  ?? [],
+    // Migrate a legacy single `topper` into the unified sticker list: a topper is just a
+    // GLB element standing on the top surface (or hugging the side). Placement is now fully
+    // config-driven, so there is no separate topper slot or renderer.
+    stickers: migrateTopperToSticker(templateDesign),
+    writing:  templateDesign.writing ?? null,
+    piping:   templateDesign.piping ?? [],
+  };
+}
+
 export function useCakeDesign({ storageBaseUrl = '' } = {}) {
   const [design, setDesign] = useState(DEFAULT_DESIGN);
 
@@ -830,50 +879,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
   }
 
   function loadDesign(templateDesign) {
-    const legacyGlbUrl = storageBaseUrl
-      ? `${storageBaseUrl}/${LEGACY_PIPING_SLUG}`
-      : null;
-
-    setDesign({
-      tiers: templateDesign.tiers.map(t => {
-        // New format stores arrays; old format a single object. Normalise to arrays and
-        // tag each with a layerId so stacked layers stay addressable.
-        let topPipings = t.topPipings ?? (t.topPiping ? [t.topPiping] : []);
-        let bottomPipings = t.bottomPipings ?? (t.bottomPiping ? [t.bottomPiping] : []);
-        if (!topPipings.length && legacyGlbUrl && (t.decorations ?? []).some(d => d.type === 'swirl_ring')) {
-          const d = t.decorations.find(d => d.type === 'swirl_ring');
-          topPipings = [{ glbUrl: legacyGlbUrl, name: 'Shell', color: d.color ?? '#f5e6c8' }];
-        }
-        if (!bottomPipings.length && legacyGlbUrl && (t.decorations ?? []).some(d => d.type === 'base_border')) {
-          const d = t.decorations.find(d => d.type === 'base_border');
-          bottomPipings = [{ glbUrl: legacyGlbUrl, name: 'Shell', color: d.color ?? '#f5e6c8' }];
-        }
-        return {
-          color:        t.color ?? '#ffffff',
-          ...(t.gradient && { gradient: t.gradient }),
-          topPipings:    topPipings.map(withLayerId),
-          bottomPipings: bottomPipings.map(withLayerId),
-          ...(t.radius != null  && { radius: t.radius }),
-          ...(t.height != null  && { height: t.height }),
-          ...(t.shape   != null  && { shape: t.shape }),
-          ...(t.width   != null  && { width: t.width }),
-          ...(t.depth   != null  && { depth: t.depth }),
-          ...(t.cornerR != null  && { cornerR: t.cornerR }),
-          // Restore per-tier wall treatments saved in the snapshot (luster dust,
-          // gold-leaf foil) so edit-in-3D / template load brings them back.
-          ...(t.dusting != null && { dusting: t.dusting }),
-          ...(t.foil    != null && { foil: t.foil }),
-        };
-      }),
-      texts:    templateDesign.texts    ?? [],
-      ages:     templateDesign.ages     ?? [],
-      // Migrate a legacy single `topper` into the unified sticker list: a topper is just a
-      // GLB element standing on the top surface (or hugging the side). Placement is now fully
-      // config-driven, so there is no separate topper slot or renderer.
-      stickers: migrateTopperToSticker(templateDesign),
-      writing: templateDesign.writing ?? null,
-      piping: templateDesign.piping ?? [],
-    });
+    setDesign(normalizeDesign(templateDesign, storageBaseUrl));
   }
 
   const canvasConfig = useMemo(() => toCanvasConfig(design), [design]);

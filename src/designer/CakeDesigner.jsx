@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { ErrorBoundary } from '../telemetry/ErrorBoundary.jsx';
 import { setContext } from '../telemetry/index.js';
 import { HexColorPicker } from 'react-colorful';
-import CakeCanvas, { CakeThumbnailCanvas } from './canvas/CakeCanvas';
+import CakeCanvas, { CakeThumbnailCanvas, CakePreview } from './canvas/CakeCanvas';
 import { cfImg } from './utils/imageUtils';
 import { CAMERA_POSITION, CAMERA_POSITION_MOBILE, PIPING_FRONT_ANGLE, TIER_RADII, BOTTOM_H, BOTTOM_BASE, BEND_ANCHOR_FRAC, ELEMENT_SLUGS, ZONES, PLACEMENT_MODES, STICKER_SIZE } from './constants';
 import PipingPreview from './canvas/PipingPreview.jsx';
@@ -15,7 +15,7 @@ import { packCluster, clusterRadii, manualSeat } from './geometry/spherePacking.
 import { finishToMaterial, finishOf } from './geometry/finish.js';
 import { SHELL_HEIGHT_FRAC, getShellExtents, getFestoonExtents, festoonSig } from './canvas/pipingMetrics.js';
 import { pipingAllowedArrangements, pipingDefaultArrangement, pipingPlacementFromConfig, makePipingLayer } from './piping/pipingLayer.js';
-import { useCakeDesign } from './hooks/useCakeDesign';
+import { useCakeDesign, normalizeDesign } from './hooks/useCakeDesign';
 import { GOLD_LEAF_DEFAULTS, GOLD_LEAF_COLORS } from './shared/textures/goldLeafFlakes.js';
 import FrostingTypePicker from './controls/FrostingPicker.jsx';
 import FrostingStylePicker from './controls/FrostingStylePicker.jsx';
@@ -1094,6 +1094,31 @@ function AddUserModal({ onClose, brandBtn }) {
   );
 }
 
+// Read-only 3D viewer for a locked order's design (confirmed onward). Renders the
+// agreed cake on a rotatable turntable via CakePreview — NO edit tools, no save —
+// so the baker can inspect it without being able to change what the customer agreed
+// to. Fed the SAME normalised design shape the editor uses (normalizeDesign).
+function OrderDesignViewer({ order, onClose }) {
+  const design = useMemo(
+    () => (order?.design_snapshot ? normalizeDesign(order.design_snapshot) : null),
+    [order],
+  );
+  if (!order) return null;
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 400, background: '#F7F5F0', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ height: 56, padding: '0 20px', background: '#fff', borderBottom: '1.5px solid #E8E4DC', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 14 }}>
+        <button onClick={onClose} style={{ width: 34, height: 34, borderRadius: 9, border: '1.5px solid #E8E4DC', background: '#fff', color: '#666', fontSize: 14, cursor: 'pointer' }}>✕</button>
+        <span style={{ fontSize: 16, fontWeight: 800, color: '#1a1a1a', flex: 1 }}>Cake design · view only</span>
+      </div>
+      <div style={{ flex: 1, minHeight: 0 }}>
+        {design
+          ? <CakePreview design={design} autoRotate />
+          : <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#bbb', fontWeight: 600 }}>No design to show</div>}
+      </div>
+    </div>
+  );
+}
+
 // ── Cream piping inline section (per-tier, per-zone controls) ─────────────────
 // ── Main designer ─────────────────────────────────────────────────────────────
 function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbnails', onOrder, onSaveTemplate, cfAssetsBase, orderMode = 'baker' }) {
@@ -1292,6 +1317,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const [orderModalOpen,      setOrderModalOpen]      = useState(false);
   const [newOrderId,          setNewOrderId]          = useState(null);
   const [editingOrder,        setEditingOrder]        = useState(null);
+  const [viewingOrder,        setViewingOrder]        = useState(null);  // locked order opened READ-ONLY in 3D
   const [ordersPanelOpen,     setOrdersPanelOpen]     = useState(false);
   const [customersPanelOpen,  setCustomersPanelOpen]  = useState(false);
   const [invitePanelOpen,     setInvitePanelOpen]     = useState(false);
@@ -6048,7 +6074,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         onBack={ordersFilter ? () => { setOrdersPanelOpen(false); setOrdersFilter(null); setNewOrderId(null); setDashboardOpen(true); } : null}
         externalFilter={ordersFilter}
         initialOrderId={newOrderId}
-        onEditDesign={(order) => {
+        onEditDesign={(order, opts) => {
+          // Locked orders (confirmed onward) open READ-ONLY in the 3D viewer — never
+          // loaded into the editor, so the design can't be changed or saved.
+          if (opts?.viewOnly) { setViewingOrder(order); setOrdersPanelOpen(false); return; }
           setEditingOrder(order);
           setOrdersPanelOpen(false);
           if (order.design_snapshot) {
@@ -6104,6 +6133,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         apiClient={apiClient}
         primaryColor={primaryColor}
       />
+
+      {/* ── Read-only 3D viewer for locked (confirmed+) orders ── */}
+      {viewingOrder && (
+        <OrderDesignViewer order={viewingOrder} onClose={() => setViewingOrder(null)} />
+      )}
 
       {/* ── Order modal ── */}
       {orderModalOpen && (

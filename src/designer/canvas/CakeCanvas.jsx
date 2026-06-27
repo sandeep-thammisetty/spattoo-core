@@ -1976,7 +1976,38 @@ function CakeThumbnailScene({ config }) {
   );
 }
 
+// Reusable temps for the per-frame bbox fit (avoid per-frame allocation).
+const _fitBox = new THREE.Box3();
+const _fitSphere = new THREE.Sphere();
+const _fitDir = new THREE.Vector3();
+
+// Frames the capture camera to the cake's ACTUAL rendered bounds (tiers + toppers +
+// piping + decorations) so the snapshot fills the frame, centred, for any cake —
+// instead of the old fixed [0,2,0] target + distance that left short cakes tiny and
+// low. Geometry-driven (no element-type branching); recomputed each frame so it
+// tracks live edits and async-loaded GLBs. Keeps the original front-above view angle.
+function FitCakeCamera({ groupRef }) {
+  const camera = useThree(s => s.camera);
+  useFrame(() => {
+    const g = groupRef.current;
+    if (!g) return;
+    _fitBox.setFromObject(g);
+    if (_fitBox.isEmpty()) return;
+    _fitBox.getBoundingSphere(_fitSphere);
+    const c = _fitSphere.center;
+    const R = _fitSphere.radius || 3;
+    const halfFov = (CAMERA_FOV / 2) * Math.PI / 180;
+    const dist = (R / Math.sin(halfFov)) * 1.08;   // 1.08 = small breathing margin
+    _fitDir.set(0, CAMERA_POSITION[1] - 2, CAMERA_POSITION[2]).normalize();
+    camera.position.copy(c).addScaledVector(_fitDir, dist);
+    camera.lookAt(c);
+    camera.updateProjectionMatrix();
+  });
+  return null;
+}
+
 export function CakeThumbnailCanvas({ config, containerRef }) {
+  const groupRef = useRef();
   return (
     <div ref={containerRef} style={{ position: 'absolute', left: -9999, top: -9999, width: 400, height: 400 }}>
       <Canvas
@@ -1985,8 +2016,8 @@ export function CakeThumbnailCanvas({ config, containerRef }) {
         camera={{ position: CAMERA_POSITION, fov: CAMERA_FOV }}
         style={{ width: 400, height: 400 }}
       >
-        <CakeThumbnailScene config={config} />
-        <OrbitControls enableZoom={false} enablePan={false} autoRotate={false} target={[0, 2, 0]} />
+        <group ref={groupRef}><CakeThumbnailScene config={config} /></group>
+        <FitCakeCamera groupRef={groupRef} />
       </Canvas>
     </div>
   );

@@ -38,9 +38,13 @@ function CustomPhotosSection({ order }) {
   );
 }
 
+// Report/document — the X-Ray panel is a build breakdown the baker reads
+// (mixing tables, nozzle recs, tin helper), so a report reads truer than a magnifier.
 const XrayGlyph = () => (
-  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
-    <circle cx="11" cy="11" r="7" /><line x1="16.5" y1="16.5" x2="21" y2="21" />
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M6 2.6h7.5L19 8v12a1.4 1.4 0 0 1-1.4 1.4H6A1.4 1.4 0 0 1 4.6 20V4A1.4 1.4 0 0 1 6 2.6Z" />
+    <path d="M13 2.8V8.4h5.6" />
+    <line x1="8" y1="13" x2="15" y2="13" /><line x1="8" y1="16.5" x2="13.5" y2="16.5" />
   </svg>
 );
 const Cube3D = () => (
@@ -59,34 +63,43 @@ const PencilGlyph = () => (
   </svg>
 );
 
-// Icon + label control — matches the "Edit Details" button: white, light border,
-// grey icon + text. No colour fill. Used for the cake-panel actions.
-function IconAction({ glyph, label, onClick, disabled }) {
+// Icon + label control — white, light border, grey icon + text. No colour fill.
+// `variant='row'` (default) = icon + label inline (desktop, below the cake).
+// `variant='stack'` = compact column, icon over a small caption (`short`) for the
+// mobile side-strip. Full `label` stays as title + aria-label for accessibility.
+function IconAction({ glyph, label, short, onClick, disabled, variant = 'row' }) {
+  const stack = variant === 'stack';
   return (
     <button
       onClick={onClick}
       disabled={disabled}
       title={label}
+      aria-label={label}
       style={{
-        display: 'inline-flex', alignItems: 'center', gap: 7,
-        padding: '9px 16px', borderRadius: 10,
-        border: '1.5px solid #E0DDD8', background: '#fff',
-        fontSize: 13, fontWeight: 700, color: '#444', fontFamily: 'inherit',
-        cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.5 : 1, whiteSpace: 'nowrap',
+        display: 'inline-flex', flexDirection: stack ? 'column' : 'row',
+        alignItems: 'center', justifyContent: 'center',
+        gap: stack ? 3 : 7,
+        padding: stack ? '2px' : '9px 16px',
+        width: stack ? undefined : undefined,
+        borderRadius: stack ? 0 : 10,
+        border: stack ? 'none' : '1.5px solid #E0DDD8',
+        background: stack ? 'transparent' : '#fff',
+        fontSize: stack ? 10.5 : 13, fontWeight: 700, color: '#444', fontFamily: 'inherit',
+        lineHeight: 1.2, cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.5 : 1, whiteSpace: 'nowrap',
       }}
     >
-      {glyph} {label}
+      {glyph}<span>{stack ? (short ?? label) : label}</span>
     </button>
   );
 }
 
 // X-Ray launcher — an icon+label action that opens the report.
-function XrayLauncher({ order, apiClient }) {
+function XrayLauncher({ order, apiClient, variant }) {
   const [open, setOpen] = useState(false);
   if (!order?.design_snapshot) return null;
   return (
     <>
-      <IconAction glyph={<XrayGlyph />} label="X-Ray report" onClick={() => setOpen(true)} />
+      <IconAction glyph={<XrayGlyph />} label="X-Ray report" short="X-Ray" onClick={() => setOpen(true)} variant={variant} />
       {open && <XrayReport order={order} apiClient={apiClient} onClose={() => setOpen(false)} />}
     </>
   );
@@ -149,6 +162,15 @@ const AUDIT_EVENT_LABELS = {
 const statusLabel = (idx, key) => idx.byKey[key]?.label ?? key;
 const isClosed    = (idx, key) => idx.byKey[key]?.phase === 'closed';
 const isTerminal  = (idx, key) => !!idx.byKey[key]?.is_terminal;
+// The design is pinned from 'confirmed' onward (the agreed cake) and in any closed
+// state — editable only during the quote phase. Locked orders open VIEW-only in 3D.
+const isDesignLocked = (idx, key) => {
+  const s = idx.byKey[key];
+  if (!s) return false;
+  if (s.phase === 'closed') return true;
+  const confirmedOrder = idx.byKey['confirmed']?.sort_order ?? Infinity;
+  return s.sort_order >= confirmedOrder;
+};
 
 // Monochrome badge tone derived from lifecycle position — no per-status hues.
 // Completed = solid ink; closed off-ramps = muted outline; in-flight = soft grey.
@@ -627,46 +649,70 @@ function OrderDetail({ order, onEditDesign, onStatusChange, onOrderEdited, apiCl
     }
   }
 
-  const isDelivered = order.status === 'completed';
-  const editBtn = isDelivered ? (
-    <IconAction glyph={<LockGlyph />} label="Design locked" disabled />
-  ) : (
-    <IconAction glyph={<Cube3D />} label="Edit in 3D" onClick={() => onEditDesign(order)} disabled={!order.design_snapshot} />
-  );
+  // From 'confirmed' onward (and closed states) the design is pinned: open it VIEW-only
+  // in 3D (no edits/save) instead of the editor. Earlier (quote phase) stays editable.
+  const designLocked = isDesignLocked(statusIndex, order.status);
 
-  // The cake-panel actions, side by side below the cake.
-  const cakeActions = (
-    <div style={{ display: 'flex', gap: 12, justifyContent: 'center', alignItems: 'center', flexWrap: 'wrap' }}>
-      <XrayLauncher order={order} apiClient={apiClient} />
-      {editBtn}
-      {!editing && <IconAction glyph={<PencilGlyph />} label="Edit Details" onClick={() => setEditing(true)} />}
-    </div>
-  );
+  // The three cake-panel actions. 'row' = labeled, horizontal (desktop, below the
+  // cake). 'strip' = icon-only, vertical (mobile, beside a compact preview). Same
+  // three actions either way — one definition, variant only changes the chrome.
+  const renderCakeActions = (layout) => {
+    const stack = layout === 'strip';
+    const v = stack ? 'stack' : 'row';
+    return (
+      <div style={{
+        display: 'flex',
+        flexDirection: stack ? 'column' : 'row',
+        gap: stack ? 20 : 12,
+        justifyContent: 'center', alignItems: 'center',
+        flexWrap: stack ? 'nowrap' : 'wrap',
+      }}>
+        <XrayLauncher order={order} apiClient={apiClient} variant={v} />
+        <IconAction
+          glyph={<Cube3D />}
+          label={designLocked ? 'View in 3D' : 'Edit in 3D'}
+          short={designLocked ? 'View 3D' : '3D Edit'}
+          onClick={() => onEditDesign(order, { viewOnly: designLocked })}
+          disabled={!order.design_snapshot}
+          variant={v}
+        />
+        {!editing && <IconAction glyph={<PencilGlyph />} label="Edit Details" short="Edit" onClick={() => setEditing(true)} variant={v} />}
+      </div>
+    );
+  };
 
   // ── Mobile: stacked layout ────────────────────────────────────────────────
   if (isMobile) {
     return (
       <div style={{ flex: 1, overflowY: 'auto', padding: '16px' }}>
-        {/* Snapshot */}
-        <div style={{
-          width: '100%', aspectRatio: '4/3', borderRadius: 16, overflow: 'hidden',
-          background: '#F0EDE8', border: '1.5px solid #E8E4DC',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          marginBottom: 16,
-        }}>
-          {order.design_thumbnail_url
-            ? <img src={order.design_thumbnail_url} alt="Cake design"
-                style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
-            : <div style={{ textAlign: 'center', color: '#bbb', fontSize: 13, fontWeight: 600 }}>No preview</div>
-          }
+        {/* Snapshot + actions side by side — preview (zoomed to fill), icon strip beside it. */}
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 20 }}>
+          <div style={{
+            flex: 1, minWidth: 0, height: 280, borderRadius: 16, overflow: 'hidden',
+            background: '#F0EDE8', border: '1.5px solid #E8E4DC',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            {order.design_thumbnail_url
+              ? <img src={order.design_thumbnail_url} alt="Cake design"
+                  style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+              : <div style={{ textAlign: 'center', color: '#bbb', fontSize: 13, fontWeight: 600 }}>No preview</div>
+            }
+          </div>
+          {renderCakeActions('strip')}
         </div>
-        <div style={{ marginBottom: 20 }}>{cakeActions}</div>
         {editing
           ? <EditForm order={order} onSave={handleSaveEdit} onCancel={() => { setEditing(false); setSaveError(null); }} saving={saving} serverError={saveError} homeDeliveryEnabled={homeDeliveryEnabled} availableFlavours={availableFlavours} />
           : <>
-              <CustomPhotosSection order={order} />
-              <StatusProgress status={order.status} onChange={handleStatus} disabled={changingStatus} statusIndex={statusIndex} />
+              {/* Action buttons (send quote / confirm / cancel) sit directly below the
+                  image; the status flow goes underneath them. */}
               <QuotePanel order={order} statusIndex={statusIndex} onIssue={handleIssueQuote} busy={quoting} error={quoteErr} primaryColor={primaryColor} onConfirm={() => handleStatus('confirmed')} confirming={changingStatus} />
+              {!isClosed(statusIndex, order.status) && !isTerminal(statusIndex, order.status) && (
+                <div style={{ marginBottom: 20 }}>
+                  <CancelOrderLink onClick={() => handleStatus('cancelled')} disabled={changingStatus} />
+                </div>
+              )}
+              <StatusProgress status={order.status} onChange={handleStatus} disabled={changingStatus} statusIndex={statusIndex} hideCancel />
+              <CustomPhotosSection order={order} />
               <DetailSections order={order} name={name} flavours={flavours} delivDate={delivDate} />
               <Section title="History">
                 <AuditTrail orderId={order.id} apiClient={apiClient} refresh={auditRefresh} />
@@ -698,7 +744,7 @@ function OrderDetail({ order, onEditDesign, onStatusChange, onOrderEdited, apiCl
             : <div style={{ textAlign: 'center', color: '#bbb', fontSize: 13, fontWeight: 600 }}>No preview</div>
           }
         </div>
-        {cakeActions}
+        {renderCakeActions('row')}
       </div>
 
       {/* Right: details */}
@@ -981,7 +1027,7 @@ export default function OrdersPanel({ open, onClose, onBack, onEditDesign, apiCl
                 ? <OrderDetail
                     key={selected.id}
                     order={selected}
-                    onEditDesign={(order) => { onClose(); onEditDesign(order); }}
+                    onEditDesign={(order, opts) => { onClose(); onEditDesign(order, opts); }}
                     onStatusChange={handleStatusChange}
                     onOrderEdited={(updated) => {
                       setOrders(os => os.map(o => o.id === updated.id ? { ...o, ...updated } : o));
@@ -1014,7 +1060,22 @@ function Empty({ children, color = '#bbb' }) {
 // stepper (no per-status colours, no red).
 const INK = '#1a1a1a';
 
-function StatusProgress({ status, onChange, disabled, readOnly = false, statusIndex = DEFAULT_STATUS_INDEX }) {
+// "Cancel order" text link — shared by the mobile action area and the status
+// stepper so they stay identical.
+function CancelOrderLink({ onClick, disabled }) {
+  return (
+    <button onClick={onClick} disabled={disabled} style={{
+      background: 'none', border: 'none', padding: 0,
+      fontSize: 12, color: '#888', fontFamily: 'inherit', fontWeight: 600,
+      textDecoration: 'underline', textUnderlineOffset: 2,
+      cursor: disabled ? 'default' : 'pointer', opacity: disabled ? 0.5 : 1,
+    }}>Cancel order</button>
+  );
+}
+
+// `hideCancel` lets a caller (mobile OrderDetail) lift the Cancel action into its
+// own button row above the stepper, so the stepper renders the timeline only.
+function StatusProgress({ status, onChange, disabled, readOnly = false, hideCancel = false, statusIndex = DEFAULT_STATUS_INDEX }) {
   const isMobile       = useIsMobile();
   const flowSteps      = statusIndex.flowSteps;
   const isClosedStatus = isClosed(statusIndex, status);   // cancelled / declined / expired
@@ -1103,13 +1164,10 @@ function StatusProgress({ status, onChange, disabled, readOnly = false, statusIn
           );
         })}
 
-        {!readOnly && !isTerminal(statusIndex, status) && (
-          <button onClick={e => { e.stopPropagation(); onChange('cancelled'); }} disabled={disabled} style={{
-            marginTop: 8, background: 'none', border: 'none', padding: 0,
-            fontSize: 12, color: '#888', fontFamily: 'inherit', fontWeight: 600,
-            textDecoration: 'underline', textUnderlineOffset: 2,
-            cursor: disabled ? 'default' : 'pointer', opacity: disabled ? 0.5 : 1,
-          }}>Cancel order</button>
+        {!readOnly && !hideCancel && !isTerminal(statusIndex, status) && (
+          <div style={{ marginTop: 8 }}>
+            <CancelOrderLink onClick={() => onChange('cancelled')} disabled={disabled} />
+          </div>
         )}
       </div>
     );
