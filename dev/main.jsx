@@ -9,7 +9,7 @@ const supabase = createClient(
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imxzdm1ueWNlaGZvcHhzZ3J1d21rIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4MjI0NjIsImV4cCI6MjA5MTM5ODQ2Mn0.ay0o6ugWvik_Mp607oYyYQIQzX4wphhhLNi-53HvwHY'
 );
 
-const API_URL = 'https://spattoo-backend.onrender.com';
+const API_URL = 'https://api.spattoo.dev';
 
 function createApiClient(supabaseClient) {
   async function authFetch(path, options = {}) {
