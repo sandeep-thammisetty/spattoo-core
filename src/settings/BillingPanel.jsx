@@ -214,6 +214,7 @@ export default function BillingPanel({ open, onClose, apiClient, primaryColor = 
   const [cancelling,     setCancelling]     = useState(false);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [error,          setError]          = useState(null);
+  const [entitlements,   setEntitlements]   = useState(null);
 
   useEffect(() => {
     if (!open) return;
@@ -222,11 +223,13 @@ export default function BillingPanel({ open, onClose, apiClient, primaryColor = 
       apiClient.fetchBillingStatus(),
       apiClient.fetchSubscriptionHistory().catch(() => []),
       apiClient.fetchBillingPeriods().catch(() => []),
+      apiClient.fetchEntitlements ? apiClient.fetchEntitlements().catch(() => null) : Promise.resolve(null),
     ])
-      .then(([b, h, p]) => {
+      .then(([b, h, p, ent]) => {
         setBilling(b);
         setHistory(h);
         setPeriods(p);
+        setEntitlements(ent);
         setSelectedTier(b.tier ?? 'spark');
         if (b.billing_period) setSelectedPeriod(inferPeriodType(b.billing_period));
       })
@@ -381,6 +384,18 @@ export default function BillingPanel({ open, onClose, apiClient, primaryColor = 
                         Subscription expired — choose a plan below
                       </div>
                     )}
+                    {/* Order usage — only when the plan caps orders (Spark trial). */}
+                    {entitlements?.ent?.max_orders_total != null && (() => {
+                      const used = entitlements.usage?.orders_used ?? 0;
+                      const cap  = entitlements.ent.max_orders_total;
+                      const atLimit = used >= cap;
+                      return (
+                        <div style={{ fontSize: 12, fontWeight: 600, marginTop: 4, color: atLimit ? '#DC2626' : '#6B7280' }}>
+                          Orders used: {used} of {cap}
+                          {atLimit && ' · upgrade below for unlimited'}
+                        </div>
+                      );
+                    })()}
                   </div>
                   <StatusBadge status={billing.status} />
                 </div>
