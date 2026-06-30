@@ -202,6 +202,103 @@ function ConfirmDialog({ open, title, message, confirmLabel = 'Confirm', onConfi
   );
 }
 
+// ── Payments ──────────────────────────────────────────────────────────────────
+const PAYMENT_STATUS_META = {
+  captured: { label: 'Paid',     color: '#065F46', bg: '#D1FAE5' },
+  failed:   { label: 'Failed',   color: '#991B1B', bg: '#FEE2E2' },
+  refunded: { label: 'Refunded', color: '#6B7280', bg: '#F3F4F6' },
+  unknown:  { label: '—',        color: '#6B7280', bg: '#F3F4F6' },
+};
+
+// `amount` is stored in minor units (paise) — render in major units.
+function formatMoney(amount, currency = 'INR') {
+  const major = (amount ?? 0) / 100;
+  try {
+    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: currency || 'INR', maximumFractionDigits: 2 }).format(major);
+  } catch {
+    return `${currency || 'INR'} ${major.toFixed(2)}`;
+  }
+}
+
+function PaymentStatusPill({ status }) {
+  const m = PAYMENT_STATUS_META[status] ?? PAYMENT_STATUS_META.unknown;
+  return (
+    <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20, background: m.bg, color: m.color }}>
+      {m.label}
+    </span>
+  );
+}
+
+function PaymentRow({ p, divider }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', borderTop: divider ? '1px solid #F0F4F1' : 'none' }}>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 14, fontWeight: 800, color: '#1a1a1a' }}>{formatMoney(p.amount, p.currency)}</div>
+        <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 2 }}>
+          {new Date(p.charged_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+        </div>
+      </div>
+      <PaymentStatusPill status={p.status} />
+    </div>
+  );
+}
+
+// Latest payment on first look; the recent list is fetched on demand when expanded.
+// `info` ({ payments:[latest], total }) comes from the panel's initial batch, so the
+// collapsed view costs no extra request — only "View all" triggers a fetch.
+function PaymentsCard({ info, apiClient, primaryColor }) {
+  const [expanded, setExpanded] = useState(false);
+  const [all, setAll]           = useState(null);   // null until first expand
+  const [loading, setLoading]   = useState(false);
+  const [err, setErr]           = useState(null);
+
+  const latest = info?.payments?.[0];
+  const total  = info?.total ?? 0;
+  if (!latest) return null;
+
+  const rows = expanded && all ? all : [latest];
+
+  async function toggle() {
+    if (expanded) { setExpanded(false); return; }
+    if (!all && apiClient?.fetchPayments) {
+      setLoading(true); setErr(null);
+      try {
+        const res = await apiClient.fetchPayments();
+        setAll(res?.payments ?? []);
+      } catch (e) {
+        setErr(e.message); setLoading(false); return;
+      }
+      setLoading(false);
+    }
+    setExpanded(true);
+  }
+
+  return (
+    <div style={{ background: '#fff', borderRadius: 16, padding: '20px 24px', boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}>
+      <div style={{ fontSize: 11, fontWeight: 800, color: '#9BB5A2', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 8 }}>Payments</div>
+      {rows.map((p, i) => <PaymentRow key={p.id} p={p} divider={i > 0} />)}
+      {err && <div style={{ fontSize: 12, color: '#991B1B', marginTop: 8, fontWeight: 600 }}>{err}</div>}
+      {total > 1 && (
+        <button
+          onClick={toggle}
+          disabled={loading}
+          style={{
+            marginTop: 10, background: 'none', border: 'none', padding: 0,
+            cursor: loading ? 'default' : 'pointer', fontFamily: 'inherit',
+            fontSize: 12, fontWeight: 700, color: primaryColor,
+            display: 'flex', alignItems: 'center', gap: 5,
+          }}
+        >
+          {loading ? 'Loading…' : expanded ? 'Hide ▲' : `View all (${total}) ▾`}
+        </button>
+      )}
+      {expanded && all && total > all.length && (
+        <div style={{ fontSize: 11, color: '#bbb', marginTop: 6 }}>Showing the most recent {all.length} of {total}.</div>
+      )}
+    </div>
+  );
+}
+
 export default function BillingPanel({ open, onClose, apiClient, primaryColor = '#1a1a1a', accentColor = '#333333' }) {
   const isMobile = useIsMobile();
   const [billing,        setBilling]        = useState(null);
@@ -215,6 +312,7 @@ export default function BillingPanel({ open, onClose, apiClient, primaryColor = 
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [error,          setError]          = useState(null);
   const [entitlements,   setEntitlements]   = useState(null);
+  const [paymentsInfo,   setPaymentsInfo]   = useState(null);   // { payments:[latest], total }
 
   useEffect(() => {
     if (!open) return;
@@ -224,12 +322,14 @@ export default function BillingPanel({ open, onClose, apiClient, primaryColor = 
       apiClient.fetchSubscriptionHistory().catch(() => []),
       apiClient.fetchBillingPeriods().catch(() => []),
       apiClient.fetchEntitlements ? apiClient.fetchEntitlements().catch(() => null) : Promise.resolve(null),
+      apiClient.fetchLatestPayment ? apiClient.fetchLatestPayment().catch(() => null) : Promise.resolve(null),
     ])
-      .then(([b, h, p, ent]) => {
+      .then(([b, h, p, ent, pay]) => {
         setBilling(b);
         setHistory(h);
         setPeriods(p);
         setEntitlements(ent);
+        setPaymentsInfo(pay);
         setSelectedTier(b.tier ?? 'spark');
         if (b.billing_period) setSelectedPeriod(inferPeriodType(b.billing_period));
       })
@@ -419,6 +519,11 @@ export default function BillingPanel({ open, onClose, apiClient, primaryColor = 
                   </button>
                 </div>
               </div>
+
+              {/* ── Payments ─────────────────────────────────────── */}
+              {paymentsInfo?.total > 0 && (
+                <PaymentsCard info={paymentsInfo} apiClient={apiClient} primaryColor={primaryColor} />
+              )}
 
               {/* ── Plan picker ──────────────────────────────────── */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
