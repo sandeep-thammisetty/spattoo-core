@@ -98,8 +98,9 @@ function IconAction({ glyph, label, short, onClick, disabled, variant = 'row' })
 }
 
 // X-Ray launcher — an icon+label action that opens the report.
-function XrayLauncher({ order, apiClient, variant }) {
+function XrayLauncher({ order, apiClient, variant, enabled }) {
   const [open, setOpen] = useState(false);
+  if (!enabled) return null;                 // X-Ray report is a Blaze+ entitlement (xray_reports)
   if (!order?.design_snapshot) return null;
   return (
     <>
@@ -780,6 +781,7 @@ function OrderDetail({ order, onEditDesign, onStatusChange, onOrderEdited, apiCl
   const [saving, setSaving]                 = useState(false);
   const [auditRefresh, setAuditRefresh]     = useState(0);
   const [availableFlavours, setAvailableFlavours] = useState([]);
+  const [xrayEnabled, setXrayEnabled] = useState(false);   // X-Ray report is a Blaze+ entitlement
 
   useEffect(() => {
     if (!bakerSlug || !apiClient?.fetchFlavours) return;
@@ -787,6 +789,13 @@ function OrderDetail({ order, onEditDesign, onStatusChange, onOrderEdited, apiCl
       .then(data => { if (Array.isArray(data)) setAvailableFlavours(data); })
       .catch(() => {});
   }, [bakerSlug]);
+
+  useEffect(() => {
+    if (!apiClient?.fetchEntitlements) return;
+    apiClient.fetchEntitlements()
+      .then(res => setXrayEnabled(res?.ent?.xray_reports === true))
+      .catch(() => {});
+  }, []);
 
   const customer  = order.customers;
   const name      = customer ? `${customer.first_name ?? ''} ${customer.last_name ?? ''}`.trim() : 'Unknown';
@@ -890,7 +899,7 @@ function OrderDetail({ order, onEditDesign, onStatusChange, onOrderEdited, apiCl
         justifyContent: 'center', alignItems: 'center',
         flexWrap: stack ? 'nowrap' : 'wrap',
       }}>
-        <XrayLauncher order={order} apiClient={apiClient} variant={v} />
+        <XrayLauncher order={order} apiClient={apiClient} variant={v} enabled={xrayEnabled} />
         <IconAction
           glyph={<Cube3D />}
           label={designLocked ? 'View in 3D' : 'Edit in 3D'}
