@@ -175,12 +175,23 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
     try {
       const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
       const filename = `${baker.slug || 'baker'}-hl-${Date.now()}.${ext}`;
-      const { url: signed, key } = await apiClient.getSignedUploadUrl('storefront/gallery', filename, file.type);
-      await fetch(signed, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file });
-      const r = await apiClient.optimizeStorefrontImage?.(key);
-      if (r?.url) setSectionField(i, 'image', r.url);
+      const { url: signed, key, publicUrl } = await apiClient.getSignedUploadUrl('storefront/gallery', filename, file.type);
+      const put = await fetch(signed, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file });
+      if (!put.ok) throw new Error(`upload failed (${put.status})`);
+      // Prefer the optimised WebP; if that endpoint errors/absent, fall back to the original so the
+      // image still shows (never silently do nothing).
+      let finalUrl = publicUrl || null;
+      try {
+        const r = await apiClient.optimizeStorefrontImage?.(key);
+        if (r?.url) finalUrl = r.url;
+      } catch (convErr) {
+        console.warn('WebP conversion failed; using original image', convErr);
+      }
+      if (finalUrl) setSectionField(i, 'image', finalUrl);
+      else alert('Could not upload the image — please try again.');
     } catch (err) {
       console.error('Highlight image upload failed', err);
+      alert('Could not upload the image — please try again.');
     } finally {
       setHlUploading(null);
     }
@@ -336,7 +347,6 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
                     <div style={s.hlEditorCap}>This highlight’s content</div>
                     <input value={sec.title || ''} placeholder="Title — e.g. This week: red velvet" onChange={e => setSectionField(i, 'title', e.target.value)} style={s.textInput} />
                     <textarea value={sec.blurb || ''} placeholder="Short blurb…" rows={2} onChange={e => setSectionField(i, 'blurb', e.target.value)} style={{ ...s.textInput, resize: 'vertical' }} />
-                    <input value={sec.cta_label || ''} placeholder="Button text (optional) — e.g. Order now" onChange={e => setSectionField(i, 'cta_label', e.target.value)} style={s.textInput} />
                     <label style={s.textLabel}>Image — upload one, or pick from your cake photos</label>
                     <div style={s.hlImgRow}>
                       <label style={s.hlUpload} title="Upload a photo">
