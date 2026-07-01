@@ -62,11 +62,14 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
     setCustomizations(value?.storefront_customizations || {});
     setPortraitUrl(value?.portrait_url || null);
     setPortraitKey(undefined);
-    setReady(true);   // config synced from `value` → safe to render the real (JSON) storefront
     setGalleryDirty(false);
+    // Render the storefront only AFTER the gallery photos have loaded — otherwise it first paints the
+    // no-photos state (dark 3D hero + "coming soon") then swaps to the framed hero once photos arrive.
+    setReady(false);
     apiClient?.fetchStorefrontPhotos?.()
       .then(r => setGallery((r?.photos || []).map((p, i) => ({ id: p.id || `e${i}`, key: p.key, url: p.url, caption: p.caption || '' }))))
-      .catch(() => setGallery([]));
+      .catch(() => setGallery([]))
+      .finally(() => setReady(true));
     setTestimonialsDirty(false);
     apiClient?.fetchTestimonials?.()
       .then(r => setTestimonials((r?.testimonials || []).map((t, i) => ({ id: t.id || `e${i}`, quote: t.quote || '', author: t.author || '', occasion: t.occasion || '' }))))
