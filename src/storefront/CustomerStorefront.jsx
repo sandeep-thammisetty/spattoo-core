@@ -716,7 +716,7 @@ function styles(primary, accent, tk, bp = 'mobile', pal) {
     utilLink:    { color: darken(primary, 0.1), textDecoration: 'none' },
     header:      { position: 'sticky', top: 0, zIndex: 30, background: 'rgba(252,250,247,0.92)', backdropFilter: 'blur(8px)', borderBottom: `1px solid ${cardBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 18px' },
     brand:       { display: 'flex', alignItems: 'center', gap: 10 },
-    logoImg:     { height: 30, width: 'auto', maxWidth: 210, objectFit: 'contain', display: 'block' },
+    logoImg:     { height: wide ? 52 : 44, width: 'auto', maxWidth: wide ? 300 : 240, objectFit: 'contain', display: 'block' },
     logo:        { width: 38, height: 38, borderRadius: '50%', objectFit: 'cover', border: `2px solid ${accent}`, background: '#fff' },
     logoFallback:{ width: 38, height: 38, borderRadius: '50%', background: pal.cta, color: pal.onCta, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 17, fontWeight: 700 },
     brandName:   { fontFamily: brandFont, fontSize: wide ? 30 : 26, fontWeight: 400, color: heading, lineHeight: 1 },
