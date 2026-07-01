@@ -418,13 +418,6 @@ export default function CustomerStorefront({
                     <div style={s.highlightText}>
                       {sec.title && <h3 style={s.highlightTitle}>{sec.title}</h3>}
                       {sec.blurb && <p style={s.highlightBlurb}>{sec.blurb}</p>}
-                      {sec.cta_label && !expired && (
-                        <button type="button" className="sf-cta" disabled={notAcceptingOrders}
-                          style={{ ...s.highlightCta, ...(notAcceptingOrders ? { opacity: 0.55, cursor: 'not-allowed' } : {}) }}
-                          onClick={handleCta}>
-                          {notAcceptingOrders ? 'Not taking new orders' : sec.cta_label}
-                        </button>
-                      )}
                     </div>
                   </div>
                 </section>
@@ -801,7 +794,6 @@ function styles(primary, accent, tk, bp = 'mobile', pal) {
     highlightText:  { flex: 1, display: 'flex', flexDirection: 'column', gap: 12, alignItems: wide ? 'flex-start' : 'center', textAlign: wide ? 'left' : 'center' },
     highlightTitle: { fontFamily: SERIF, fontSize: wide ? 26 : 22, fontWeight: 700, color: heading, margin: 0, lineHeight: 1.2 },
     highlightBlurb: { fontSize: 15.5, fontWeight: 500, lineHeight: 1.65, color: text, margin: 0 },
-    highlightCta:   { marginTop: 6, padding: '13px 30px', borderRadius: 14, border: 'none', background: pal.cta, color: pal.onCta, fontSize: 15.5, fontWeight: 700, cursor: 'pointer', fontFamily: FONT, boxShadow: shadow },
 
     // Our story
     storyWrap:   { display: 'flex', flexDirection: desktop ? 'row' : 'column', alignItems: 'center', textAlign: desktop ? 'left' : 'center', gap: desktop ? 40 : 0, maxWidth: desktop ? 820 : 460, margin: '0 auto' },

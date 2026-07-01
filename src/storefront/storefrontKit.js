@@ -105,7 +105,7 @@ export const DEFAULT_SECTIONS = [
 ];
 // A new (blank, enabled) section of the given type — used by the customiser's "Add section".
 export function newSection(type = 'highlight') {
-  return { type, enabled: true, title: '', blurb: '', cta_label: '', image: '' };
+  return { type, enabled: true, title: '', blurb: '', image: '' };
 }
 // Resolve the baker's saved sections into a clean ordered list. Keeps only known types, and
 // appends any DEFAULT type the baker's list is missing (so new section types light up for
