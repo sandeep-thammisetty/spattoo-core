@@ -412,14 +412,12 @@ export default function CustomerStorefront({
               if (!(sec.title || sec.blurb || sec.image)) return null;
               return wavy(`highlight-${i}`, (
                 <section id={`highlight-${i}`} style={{ padding: '4px 0' }}>
-                  <div style={s.eyebrow}>{sec.eyebrow || txt('highlight_heading')}</div>
-                  <div style={{ ...s.highlightWrap, flexDirection: wide ? (sec.image ? 'row' : 'column') : 'column' }}>
-                    {sec.image && <div style={s.highlightMedia}><img src={sec.image} alt={sec.title || ''} style={s.highlightImg} /></div>}
-                    <div style={s.highlightText}>
-                      {sec.title && <h3 style={s.highlightTitle}>{sec.title}</h3>}
-                      {sec.blurb && <p style={s.highlightBlurb}>{sec.blurb}</p>}
-                    </div>
+                  {/* The baker's TITLE is the heading (no hardcoded eyebrow); image sits BELOW the text. */}
+                  <div style={s.highlightText}>
+                    {sec.title && <h3 style={s.highlightTitle}>{sec.title}</h3>}
+                    {sec.blurb && <p style={s.highlightBlurb}>{sec.blurb}</p>}
                   </div>
+                  {sec.image && <div style={s.highlightMedia}><img src={sec.image} alt={sec.title || ''} style={s.highlightImg} /></div>}
                 </section>
               ));
             }
@@ -787,12 +785,11 @@ function styles(primary, accent, tk, bp = 'mobile', pal) {
     stepTitle:   { fontSize: 16.5, fontWeight: 700, color: heading, marginBottom: 5 },
     stepBody:    { fontSize: 14, fontWeight: 500, lineHeight: 1.55, color: muted, margin: 0 },
 
-    // Highlight — baker-set featured item ("this week's special")
-    highlightWrap:  { display: 'flex', alignItems: 'center', gap: desktop ? 40 : 22, maxWidth: 860, margin: '0 auto' },
-    highlightMedia: { flex: '0 0 auto', width: wide ? 300 : '100%', maxWidth: wide ? 300 : 360 },
+    // Highlight — baker-set featured band: TITLE (heading) → blurb → image below, centred.
+    highlightText:  { display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'center', textAlign: 'center', maxWidth: 560, margin: '0 auto' },
+    highlightTitle: { fontFamily: SERIF, fontSize: wide ? 28 : 23, fontWeight: 700, color: heading, margin: 0, lineHeight: 1.2 },
+    highlightMedia: { width: '100%', maxWidth: wide ? 460 : 360, margin: '20px auto 0' },
     highlightImg:   { width: '100%', aspectRatio: '4 / 3', objectFit: 'cover', borderRadius: 18, boxShadow: shadow, border: `1px solid ${cardBorder}`, display: 'block' },
-    highlightText:  { flex: 1, display: 'flex', flexDirection: 'column', gap: 12, alignItems: wide ? 'flex-start' : 'center', textAlign: wide ? 'left' : 'center' },
-    highlightTitle: { fontFamily: SERIF, fontSize: wide ? 26 : 22, fontWeight: 700, color: heading, margin: 0, lineHeight: 1.2 },
     highlightBlurb: { fontSize: 15.5, fontWeight: 500, lineHeight: 1.65, color: text, margin: 0 },
 
     // Our story
