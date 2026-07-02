@@ -394,18 +394,6 @@ export default function BillingPanel({ open, onClose, apiClient, primaryColor = 
                         Subscription expired — choose a plan below
                       </div>
                     )}
-                    {/* Order usage — only when the plan caps orders (Spark trial). */}
-                    {entitlements?.ent?.max_orders_total != null && (() => {
-                      const used = entitlements.usage?.orders_used ?? 0;
-                      const cap  = entitlements.ent.max_orders_total;
-                      const atLimit = used >= cap;
-                      return (
-                        <div style={{ fontSize: 12, fontWeight: 600, marginTop: 4, color: atLimit ? '#DC2626' : '#6B7280' }}>
-                          Orders used: {used} of {cap}
-                          {atLimit && ' · upgrade below for unlimited'}
-                        </div>
-                      );
-                    })()}
                   </div>
                   <StatusBadge status={billing.status} />
                 </div>
